@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 
 type QueryResult = {
   question: string;
@@ -184,6 +185,29 @@ export default function Home() {
             ))
           )}
         </div>
+
+        {/* Bottom nav */}
+        <div className="border-t border-white/10 p-2 space-y-0.5">
+          <Link
+            href="/invites"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M8 3v10M3 8h10" />
+            </svg>
+            Инвайты
+          </Link>
+          <Link
+            href="/profile"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <circle cx="8" cy="5" r="3" />
+              <path d="M2 14c0-3 2.5-5 6-5s6 2 6 5" />
+            </svg>
+            Профиль
+          </Link>
+        </div>
       </aside>
 
       {/* Main area */}
@@ -203,9 +227,12 @@ export default function Home() {
           </div>
           {user && (
             <div className="flex items-center gap-3">
-              <span className="text-sm text-white/50">
+              <Link
+                href="/profile"
+                className="text-sm text-white/50 hover:text-white transition"
+              >
                 {user.username ? `@${user.username}` : user.firstName}
-              </span>
+              </Link>
               <button
                 onClick={handleLogout}
                 className="text-sm text-white/30 hover:text-white transition"
