@@ -117,12 +117,12 @@ export default function LoginPage() {
         <p className="text-xs text-white/30">
           Don&apos;t have access? Contact{" "}
           <a
-            href="https://t.me/Nickelodeon"
+            href="https://t.me/hi_Nickelodeon"
             target="_blank"
             rel="noopener noreferrer"
             className="text-blue-400 hover:underline"
           >
-            @Nickelodeon
+            t.me/hi_Nickelodeon
           </a>{" "}
           for an invite link.
         </p>
