@@ -34,64 +34,141 @@ const pool = createPool(databaseUrl);
 const appPool = createAppPool(appDatabaseUrl);
 const bot = new Bot(token);
 
-// ─── /join command — BEFORE auth middleware ───
+const botUsername =
+  process.env.NEXT_PUBLIC_TELEGRAM_BOT_NAME || "leadsaibot";
+const webUrl = process.env.NEXT_PUBLIC_WEB_URL || "https://querybot-nu.vercel.app";
 
-bot.command("join", async (ctx) => {
-  const code = ctx.match?.trim();
-  if (!code) {
-    await ctx.reply("Используй: /join КОД\n\nПример: /join a1b2c3d4");
-    return;
-  }
+// ─── /start with deep link invite handling — BEFORE auth middleware ───
 
+bot.command("start", async (ctx) => {
+  const payload = ctx.match?.trim();
   const telegramId = ctx.from?.id;
   if (!telegramId) return;
 
-  // Check if already registered
-  const existing = await findUserByTelegramId(appPool, telegramId);
-  if (existing) {
-    await ctx.reply("✅ Ты уже зарегистрирован!");
+  // Deep link invite: /start INVITE_CODE
+  if (payload) {
+    const existing = await findUserByTelegramId(appPool, telegramId);
+    if (existing) {
+      // Already registered — show welcome with web button
+      const keyboard = new InlineKeyboard().url(
+        "Open Web Dashboard",
+        webUrl,
+      );
+      await ctx.reply(
+        "You already have access! Start asking questions or open the web version.",
+        { reply_markup: keyboard },
+      );
+      // Fall through to show suggestions
+      await showWelcome(ctx);
+      return;
+    }
+
+    // Validate invite
+    const invite = await findInviteByCode(appPool, payload);
+    if (
+      !invite ||
+      invite.used_by !== null ||
+      (invite.expires_at && new Date(invite.expires_at) < new Date())
+    ) {
+      await ctx.reply(
+        "This invite link is invalid or has already been used.\n\nPlease request a new one.",
+      );
+      return;
+    }
+
+    // Auto-register
+    const user = await createUser(appPool, {
+      telegram_id: telegramId,
+      username: ctx.from?.username,
+      first_name: ctx.from?.first_name || "User",
+      last_name: ctx.from?.last_name,
+      invited_by: invite.created_by,
+    });
+
+    await useInvite(appPool, invite.id, user.id);
+
+    // Store user in context for downstream
+    (ctx as unknown as Record<string, unknown>).appUser = user;
+
+    const keyboard = new InlineKeyboard().url(
+      "Open Web Dashboard",
+      webUrl,
+    );
+
+    await ctx.reply(
+      "Welcome to <b>Leads AI — Insights</b>!\n\n" +
+        "Your access has been activated. You can now:\n" +
+        "- Ask questions about your data in natural language\n" +
+        "- Get daily insights automatically via /schedule\n" +
+        "- Access the web dashboard for a full experience\n\n" +
+        "Try asking a question or tap the button below:",
+      { parse_mode: "HTML", reply_markup: keyboard },
+    );
+
+    // Show suggestions
+    await showSuggestions(ctx);
     return;
   }
 
-  // Find and validate invite
-  const invite = await findInviteByCode(appPool, code);
-  if (
-    !invite ||
-    invite.used_by !== null ||
-    (invite.expires_at && new Date(invite.expires_at) < new Date())
-  ) {
-    await ctx.reply("❌ Инвайт-код недействителен или уже использован.");
+  // Regular /start (no payload) — requires auth
+  const user = await findUserByTelegramId(appPool, telegramId);
+  if (!user) {
+    await ctx.reply(
+      "Access denied. You need an invite link to get started.\n\nContact @Nickelodeon for access.",
+    );
     return;
   }
 
-  // Create user
-  const user = await createUser(appPool, {
-    telegram_id: telegramId,
-    username: ctx.from?.username,
-    first_name: ctx.from?.first_name || "User",
-    last_name: ctx.from?.last_name,
-    invited_by: invite.created_by,
-  });
-
-  await useInvite(appPool, invite.id, user.id);
-  await ctx.reply(
-    "🎉 Добро пожаловать! Ты зарегистрирован.\n\nТеперь можешь задавать вопросы о данных. Попробуй /start для примеров.",
-  );
+  (ctx as unknown as Record<string, unknown>).appUser = user;
+  updateLastSeen(appPool, user.id).catch(() => {});
+  await showWelcome(ctx);
 });
+
+async function showWelcome(ctx: { reply: (text: string, opts?: Record<string, unknown>) => Promise<unknown> }) {
+  await showSuggestions(ctx);
+}
+
+async function showSuggestions(ctx: { reply: (text: string, opts?: Record<string, unknown>) => Promise<unknown> }) {
+  try {
+    const tables = await getSchema(pool);
+    const suggestions = await generateSuggestions(tables);
+
+    const keyboard = new InlineKeyboard();
+    for (const s of suggestions) {
+      keyboard.text(s, `q:${s}`).row();
+    }
+
+    await ctx.reply(
+      "<b>Example queries:</b>\n\n" +
+        "/schema — database schema\n" +
+        "/history — recent queries\n" +
+        "/generate — create invite link\n" +
+        "/help — all commands",
+      { parse_mode: "HTML", reply_markup: keyboard },
+    );
+  } catch {
+    await ctx.reply(
+      "Try asking a question like:\n" +
+        "- Top 5 products by price\n" +
+        "- Orders by status\n\n" +
+        "/help — all commands",
+    );
+  }
+}
 
 // ─── Auth middleware — DB user lookup ───
 
 bot.use(async (ctx, next) => {
   const telegramId = ctx.from?.id;
   if (!telegramId) {
-    await ctx.reply("⛔ Не удалось определить пользователя.");
+    await ctx.reply("Could not identify user.");
     return;
   }
 
   const user = await findUserByTelegramId(appPool, telegramId);
   if (!user) {
     await ctx.reply(
-      "⛔ Доступ запрещён. Попросите инвайт-код у @Nickelodeon и используйте /join КОД",
+      "Access denied. You need an invite link to use this bot.\n\nContact @Nickelodeon for access.",
     );
     return;
   }
@@ -107,41 +184,8 @@ bot.use(async (ctx, next) => {
 
 // Helper to get user from context
 function getUser(ctx: unknown) {
-  return (ctx as Record<string, { id: number; telegram_id: string }>).appUser;
+  return (ctx as Record<string, { id: number; telegram_id: string; role: string }>).appUser;
 }
-
-// ─── /start — with AI suggestions ───
-
-bot.command("start", async (ctx) => {
-  try {
-    const tables = await getSchema(pool);
-    const suggestions = await generateSuggestions(tables);
-
-    const keyboard = new InlineKeyboard();
-    for (const s of suggestions) {
-      keyboard.text(s, `q:${s}`).row();
-    }
-
-    await ctx.reply(
-      "👋 Привет! Я QueryBot — задай вопрос о данных на естественном языке, и я выполню SQL-запрос.\n\n" +
-        "Попробуй один из примеров или напиши свой вопрос:\n\n" +
-        "/schema — показать схему БД\n" +
-        "/history — последние запросы\n" +
-        "/invite — создать инвайт-код\n" +
-        "/help — помощь",
-      { reply_markup: keyboard },
-    );
-  } catch {
-    await ctx.reply(
-      "👋 Привет! Я QueryBot — задай вопрос о данных.\n\n" +
-        "Примеры:\n" +
-        "• Покажи топ-5 товаров по цене\n" +
-        "• Сколько заказов в каждом статусе?\n\n" +
-        "/schema — схема БД\n" +
-        "/help — помощь",
-    );
-  }
-});
 
 // Handle inline keyboard callback for suggestions
 bot.callbackQuery(/^q:(.+)$/, async (ctx) => {
@@ -154,16 +198,16 @@ bot.callbackQuery(/^q:(.+)$/, async (ctx) => {
 
 bot.command("help", async (ctx) => {
   await ctx.reply(
-    "Просто напиши вопрос на русском или английском — я преобразую его в SQL и покажу результат.\n\n" +
-      "⚠️ Только чтение (SELECT). Модификация данных невозможна.\n\n" +
-      "Команды:\n" +
-      "/start — приветствие + подсказки\n" +
-      "/schema — схема базы данных\n" +
-      "/history — последние 10 запросов\n" +
-      "/invite — создать инвайт-код\n" +
-      "/schedule [interval] [вопрос] — запланировать запрос\n" +
-      "/schedules — мои расписания\n" +
-      "/help — эта справка",
+    "Ask any question in natural language and I'll convert it to SQL.\n\n" +
+      "Read-only (SELECT). No data modification.\n\n" +
+      "Commands:\n" +
+      "/start — welcome + suggestions\n" +
+      "/schema — database schema\n" +
+      "/history — recent 10 queries\n" +
+      "/generate — create invite link\n" +
+      "/schedule [interval] [question] — schedule a query\n" +
+      "/schedules — my schedules\n" +
+      "/help — this help",
   );
 });
 
@@ -184,7 +228,7 @@ bot.command("schema", async (ctx) => {
     await ctx.reply(text, { parse_mode: "HTML" });
   } catch (err) {
     await ctx.reply(
-      "❌ Ошибка получения схемы: " +
+      "Error fetching schema: " +
         (err instanceof Error ? err.message : "Unknown"),
     );
   }
@@ -197,25 +241,60 @@ bot.command("history", async (ctx) => {
   const items = await getQueryHistory(appPool, user.id, 10);
 
   if (items.length === 0) {
-    await ctx.reply("📋 У тебя пока нет запросов.");
+    await ctx.reply("No queries yet. Try asking a question!");
     return;
   }
 
   const text = items
     .map((h, i) => {
-      const status = h.error ? "❌" : `✅ ${h.row_count} строк`;
+      const status = h.error ? "error" : `${h.row_count} rows`;
       const date = new Date(h.created_at).toLocaleString("ru");
       return `${i + 1}. ${escapeHtml(h.question)}\n   ${status} · ${date}`;
     })
     .join("\n\n");
 
-  await ctx.reply(`<b>Последние запросы:</b>\n\n${text}`, {
+  await ctx.reply(`<b>Recent queries:</b>\n\n${text}`, {
     parse_mode: "HTML",
   });
 });
 
-// ─── /invite ───
+// ─── /generate — create invite with deep link ───
 
+bot.command("generate", async (ctx) => {
+  const user = getUser(ctx);
+  const code = crypto.randomBytes(4).toString("hex");
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  await createInvite(appPool, user.id, code, expiresAt);
+
+  const deepLink = `https://t.me/${botUsername}?start=${code}`;
+
+  const keyboard = new InlineKeyboard().url("Activate Access", deepLink);
+
+  // Professional invite message for forwarding
+  await ctx.reply(
+    `<b>You're Invited to Leads AI — Insights</b>\n\n` +
+      `You have been granted access to our private AI-powered database analytics tool.\n\n` +
+      `Query your DB using natural language.\n` +
+      `Get daily insights automatically.\n` +
+      `Sync history between Web and Mobile.\n\n` +
+      `<i>This invite expires in 7 days.</i>`,
+    { parse_mode: "HTML", reply_markup: keyboard },
+  );
+
+  // Show existing invites summary to the admin
+  const invites = await listInvites(appPool, user.id);
+  if (invites.length > 1) {
+    let summary = `\n<b>Your invites (${invites.length}):</b>\n`;
+    for (const inv of invites.slice(0, 5)) {
+      const status = inv.used_by ? "used" : "active";
+      summary += `<code>${inv.code}</code> — ${status}\n`;
+    }
+    await ctx.reply(summary, { parse_mode: "HTML" });
+  }
+});
+
+// Keep /invite as alias for /generate
 bot.command("invite", async (ctx) => {
   const user = getUser(ctx);
   const code = crypto.randomBytes(4).toString("hex");
@@ -223,28 +302,19 @@ bot.command("invite", async (ctx) => {
 
   await createInvite(appPool, user.id, code, expiresAt);
 
-  const botUsername =
-    process.env.NEXT_PUBLIC_TELEGRAM_BOT_NAME || "leadsaibot";
-  const webUrl = process.env.NEXT_PUBLIC_WEB_URL || "";
+  const deepLink = `https://t.me/${botUsername}?start=${code}`;
 
-  let text = `🎟 Инвайт-код: <code>${code}</code>\n\n`;
-  text += `Бот: /join ${code}\n`;
-  if (webUrl) {
-    text += `Веб: ${webUrl}/login?invite=${code}\n`;
-  }
-  text += `\nДействителен 7 дней.`;
+  const keyboard = new InlineKeyboard().url("Activate Access", deepLink);
 
-  // Show existing invites
-  const invites = await listInvites(appPool, user.id);
-  if (invites.length > 1) {
-    text += `\n\n<b>Твои инвайты (${invites.length}):</b>\n`;
-    for (const inv of invites.slice(0, 5)) {
-      const status = inv.used_by ? "✅ использован" : "⏳ активен";
-      text += `<code>${inv.code}</code> — ${status}\n`;
-    }
-  }
-
-  await ctx.reply(text, { parse_mode: "HTML" });
+  await ctx.reply(
+    `<b>You're Invited to Leads AI — Insights</b>\n\n` +
+      `You have been granted access to our private AI-powered database analytics tool.\n\n` +
+      `Query your DB using natural language.\n` +
+      `Get daily insights automatically.\n` +
+      `Sync history between Web and Mobile.\n\n` +
+      `<i>This invite expires in 7 days.</i>`,
+    { parse_mode: "HTML", reply_markup: keyboard },
+  );
 });
 
 // ─── /schedule ───
@@ -262,9 +332,9 @@ bot.command("schedule", async (ctx) => {
 
   if (!args) {
     await ctx.reply(
-      "Используй: /schedule [интервал] [вопрос]\n\n" +
-        "Интервалы: hourly, daily, weekly, monthly\n\n" +
-        "Пример: /schedule daily Топ-5 товаров по продажам",
+      "Usage: /schedule [interval] [question]\n\n" +
+        "Intervals: hourly, daily, weekly, monthly\n\n" +
+        "Example: /schedule daily Top 5 products by sales",
     );
     return;
   }
@@ -274,24 +344,24 @@ bot.command("schedule", async (ctx) => {
   const question = parts.slice(1).join(" ");
 
   if (!question) {
-    await ctx.reply("❌ Укажи вопрос после интервала.\n\nПример: /schedule daily Топ-5 товаров");
+    await ctx.reply("Specify a question after the interval.\n\nExample: /schedule daily Top 5 products");
     return;
   }
 
   const cronExpr = CRON_PRESETS[intervalKey];
   if (!cronExpr) {
     await ctx.reply(
-      `❌ Неизвестный интервал: ${intervalKey}\n\nДопустимые: hourly, daily, weekly, monthly`,
+      `Unknown interval: ${intervalKey}\n\nAllowed: hourly, daily, weekly, monthly`,
     );
     return;
   }
 
-  await ctx.reply("⏳ Проверяю запрос...");
+  await ctx.reply("Validating query...");
 
   // Validate by running the query
   const result = await query(pool, question);
   if (result.error) {
-    await ctx.reply(`❌ Запрос с ошибкой: ${result.error}`);
+    await ctx.reply(`Query error: ${result.error}`);
     return;
   }
 
@@ -310,11 +380,11 @@ bot.command("schedule", async (ctx) => {
   });
 
   await ctx.reply(
-    `✅ Расписание создано!\n\n` +
-      `📋 ${escapeHtml(question)}\n` +
-      `⏰ ${intervalKey}\n` +
-      `🆔 ID: ${schedule.id}\n\n` +
-      `Отменить: /cancel_${schedule.id}`,
+    `Schedule created!\n\n` +
+      `<b>${escapeHtml(question)}</b>\n` +
+      `Interval: ${intervalKey}\n` +
+      `ID: ${schedule.id}\n\n` +
+      `Cancel: /cancel_${schedule.id}`,
     { parse_mode: "HTML" },
   );
 });
@@ -327,7 +397,7 @@ bot.command("schedules", async (ctx) => {
 
   const active = schedules.filter((s) => s.is_active);
   if (active.length === 0) {
-    await ctx.reply("📋 У тебя нет активных расписаний.\n\nСоздать: /schedule daily Твой вопрос");
+    await ctx.reply("No active schedules.\n\nCreate one: /schedule daily Your question");
     return;
   }
 
@@ -335,12 +405,12 @@ bot.command("schedules", async (ctx) => {
     .map((s) => {
       const lastRun = s.last_run_at
         ? new Date(s.last_run_at).toLocaleString("ru")
-        : "ещё не запускался";
-      return `🆔 ${s.id} · <code>${s.cron_expr}</code>\n📋 ${escapeHtml(s.question)}\n⏱ ${lastRun}\n/cancel_${s.id}`;
+        : "not run yet";
+      return `ID ${s.id} · <code>${s.cron_expr}</code>\n<b>${escapeHtml(s.question)}</b>\nLast run: ${lastRun}\n/cancel_${s.id}`;
     })
     .join("\n\n");
 
-  await ctx.reply(`<b>Активные расписания:</b>\n\n${text}`, {
+  await ctx.reply(`<b>Active schedules:</b>\n\n${text}`, {
     parse_mode: "HTML",
   });
 });
@@ -353,7 +423,7 @@ bot.hears(/^\/cancel_(\d+)$/, async (ctx) => {
 
   const ok = await deactivateSchedule(appPool, scheduleId, user.id);
   if (!ok) {
-    await ctx.reply("❌ Расписание не найдено или уже отменено.");
+    await ctx.reply("Schedule not found or already cancelled.");
     return;
   }
 
@@ -361,7 +431,7 @@ bot.hears(/^\/cancel_(\d+)$/, async (ctx) => {
   const { cancelJob } = await import("./scheduler");
   cancelJob(scheduleId);
 
-  await ctx.reply(`✅ Расписание #${scheduleId} отменено.`);
+  await ctx.reply(`Schedule #${scheduleId} cancelled.`);
 });
 
 // ─── Handle text messages — run query pipeline ───
@@ -377,7 +447,7 @@ async function processQuery(
 ): Promise<void> {
   const user = getUser(ctx);
 
-  await ctx.reply("⏳ Выполняю запрос...");
+  await ctx.reply("Running query...");
 
   try {
     const result = await query(pool, question);
@@ -395,7 +465,7 @@ async function processQuery(
 
     if (result.error) {
       await ctx.reply(
-        `❌ ${result.error}\n\n<b>SQL:</b>\n<pre>${escapeHtml(result.sql)}</pre>`,
+        `${result.error}\n\n<b>SQL:</b>\n<pre>${escapeHtml(result.sql)}</pre>`,
         { parse_mode: "HTML" },
       );
       return;
@@ -409,7 +479,7 @@ async function processQuery(
       executionMs: result.executionMs,
     });
 
-    const message = `<b>SQL:</b>\n<pre>${escapeHtml(result.sql)}</pre>\n\n<b>Результат:</b>\n${formatted}`;
+    const message = `<b>SQL:</b>\n<pre>${escapeHtml(result.sql)}</pre>\n\n<b>Result:</b>\n${formatted}`;
 
     // Telegram messages have 4096 char limit
     if (message.length > 4096) {
@@ -423,7 +493,7 @@ async function processQuery(
     }
   } catch (err) {
     await ctx.reply(
-      "❌ Ошибка: " + (err instanceof Error ? err.message : "Unknown"),
+      "Error: " + (err instanceof Error ? err.message : "Unknown"),
     );
   }
 }

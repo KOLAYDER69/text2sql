@@ -7,10 +7,7 @@ import { createSession, getSessionCookieName } from "@/lib/auth";
 import {
   createAppPool,
   findUserByTelegramId,
-  createUser,
   updateLastSeen,
-  findInviteByCode,
-  useInvite,
 } from "@querybot/engine";
 import type pg from "pg";
 
@@ -27,10 +24,7 @@ function getAppPool() {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { inviteCode, ...telegramData } = body as TelegramLoginData & {
-      inviteCode?: string;
-    };
+    const telegramData = (await request.json()) as TelegramLoginData;
 
     // Verify Telegram login
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -50,45 +44,18 @@ export async function POST(request: Request) {
 
     const pool = getAppPool();
 
-    // Lookup user
-    let user = await findUserByTelegramId(pool, telegramData.id);
+    // Lookup user — must already be whitelisted via Telegram deep link
+    const user = await findUserByTelegramId(pool, telegramData.id);
 
     if (!user) {
-      // New user — need a valid invite code
-      if (!inviteCode) {
-        return NextResponse.json(
-          { error: "no_account" },
-          { status: 403 },
-        );
-      }
-
-      const invite = await findInviteByCode(pool, inviteCode);
-      if (
-        !invite ||
-        invite.used_by !== null ||
-        (invite.expires_at && new Date(invite.expires_at) < new Date())
-      ) {
-        return NextResponse.json(
-          { error: "invalid_invite" },
-          { status: 403 },
-        );
-      }
-
-      // Create user
-      user = await createUser(pool, {
-        telegram_id: telegramData.id,
-        username: telegramData.username,
-        first_name: telegramData.first_name,
-        last_name: telegramData.last_name,
-        invited_by: invite.created_by,
-      });
-
-      // Mark invite as used
-      await useInvite(pool, invite.id, user.id);
-    } else {
-      // Update last seen
-      await updateLastSeen(pool, user.id);
+      return NextResponse.json(
+        { error: "no_account" },
+        { status: 403 },
+      );
     }
+
+    // Update last seen
+    await updateLastSeen(pool, user.id);
 
     // Create JWT session
     const token = await createSession({

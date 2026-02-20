@@ -37,13 +37,11 @@ export async function POST() {
   const invite = await createInvite(getAppPool(), session.userId, code, expiresAt);
 
   const botName = process.env.NEXT_PUBLIC_TELEGRAM_BOT_NAME || "leadsaibot";
-  const webUrl = process.env.NEXT_PUBLIC_WEB_URL || "";
-  const inviteLink = webUrl ? `${webUrl}/login?invite=${code}` : `/login?invite=${code}`;
+  const deepLink = `https://t.me/${botName}?start=${code}`;
 
   return NextResponse.json({
     invite,
     code,
-    inviteLink,
-    botCommand: `/join ${code}`,
+    deepLink,
   });
 }
