@@ -22,10 +22,12 @@ const FORBIDDEN_PATTERN = new RegExp(
 export function validateSQL(sql: string): { valid: boolean; error?: string } {
   const trimmed = sql.trim();
 
-  if (trimmed === "-- UNSUPPORTED") {
+  if (trimmed.startsWith("-- UNSUPPORTED")) {
+    // AI may include explanation after "-- UNSUPPORTED: ..."
+    const reason = trimmed.slice("-- UNSUPPORTED".length).replace(/^[:\s]+/, "").trim();
     return {
       valid: false,
-      error: "Этот вопрос не может быть отвечен с текущей схемой базы данных.",
+      error: reason || "This question cannot be answered with the available database schema.",
     };
   }
 

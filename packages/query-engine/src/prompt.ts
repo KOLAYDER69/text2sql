@@ -40,16 +40,16 @@ RULES:
 3. Use proper PostgreSQL syntax. Use CTEs, window functions, subqueries as needed.
 4. The question has been pre-translated to English. Use English column aliases.
 5. Limit results to 50 rows unless the user requests more.
-6. Always use table and column names exactly as shown in the schema.
+6. CRITICAL: ONLY use tables and columns that exist in the schema above. NEVER invent or guess table/column names. If the question asks about data that doesn't exist in the schema, respond with \`-- UNSUPPORTED: brief reason\`.
 7. For aggregations, always include meaningful aliases.
-8. For columns with enum values listed in the schema (-- values: ...), ONLY use those exact values in WHERE clauses. Never guess or invent enum values.
+8. For columns with allowed values listed (-- enum values: ...), ONLY use those exact values. Never guess or invent values.
+9. If the question maps to an existing concept in the schema under a different name (e.g. "deposits" could mean orders, "commissions" could mean order totals), use the closest matching table. If no reasonable mapping exists, respond with \`-- UNSUPPORTED\`.
 
 ANALYTICAL QUESTIONS:
-- For "why" or comparison questions, generate SQL that retrieves the comparison data needed to reason about it. For example: aggregate by time period, compare metrics, show breakdowns.
+- For "why" or comparison questions, generate SQL that retrieves the comparison data needed to reason about it.
 - For broad analytical questions, use CTEs to gather multiple perspectives in one query.
 - Think step-by-step about what data would help answer the question, then write the SQL to get it.
-- NEVER return "-- UNSUPPORTED" for questions that can be partially answered with existing data.
-- ONLY respond with exactly \`-- UNSUPPORTED\` if the question is completely unrelated to any data in the schema (e.g. asking about weather when the DB is about sales).`;
+- If the question is about data that has no representation in the schema at all, respond with \`-- UNSUPPORTED: reason\` explaining what data is missing (e.g. "No transactions or deposits table exists. Available tables: orders, products, customers").`;
 }
 
 export function buildAnalysisPrompt(tables: TableSchema[]): string {
