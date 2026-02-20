@@ -47,6 +47,8 @@ const translations = {
   "suggestion.2": { ru: "Сколько заказов в каждом статусе?", en: "How many orders in each status?" },
   "suggestion.3": { ru: "Какой средний чек по городам?", en: "What's the average order value by city?" },
   "suggestion.4": { ru: "Покажи всех клиентов из Москвы", en: "Show all customers from Moscow" },
+  "suggestion.5": { ru: "Сравни доходы за январь и февраль", en: "Compare revenue for January and February" },
+  "suggestion.6": { ru: "Топ-10 пользователей по количеству операций", en: "Top 10 users by number of operations" },
 
   // ─── Invites page ───
   "invites.title": { ru: "Инвайты", en: "Invites" },

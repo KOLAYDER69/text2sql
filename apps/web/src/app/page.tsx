@@ -162,6 +162,8 @@ export default function Home() {
     t("suggestion.2"),
     t("suggestion.3"),
     t("suggestion.4"),
+    t("suggestion.5"),
+    t("suggestion.6"),
   ];
 
   const showEmpty = !result && !loading;
@@ -298,7 +300,7 @@ export default function Home() {
                 <p className="text-white/40 text-center mb-8 text-sm">
                   {t("main.subtitle")}
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {(suggestions.length > 0 ? suggestions : defaultSuggestions).map((q) => (
                     <button
                       key={q}
