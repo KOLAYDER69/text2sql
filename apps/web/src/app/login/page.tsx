@@ -10,34 +10,45 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [polling, setPolling] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const tokenRef = useRef<string | null>(null);
+  const telegramUrlRef = useRef<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Init token once, then reuse on re-clicks
+  const initToken = useCallback(async () => {
+    if (tokenRef.current) return; // already have a token
+
+    const res = await fetch("/api/auth/init", { method: "POST" });
+    const data = await res.json();
+    tokenRef.current = data.token;
+    telegramUrlRef.current = data.telegramUrl;
+
+    // Start polling (once)
+    pollRef.current = setInterval(async () => {
+      try {
+        const check = await fetch(`/api/auth/check?token=${tokenRef.current}`);
+        const result = await check.json();
+        if (result.authenticated) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          router.push("/");
+        }
+      } catch {
+        // ignore polling errors
+      }
+    }, 2000);
+  }, [router]);
 
   const startAuth = useCallback(async () => {
     setError(null);
 
     try {
-      const res = await fetch("/api/auth/init", { method: "POST" });
-      const data = await res.json();
-
-      window.open(data.telegramUrl, "_blank");
+      await initToken();
+      window.open(telegramUrlRef.current!, "_blank");
       setPolling(true);
-
-      pollRef.current = setInterval(async () => {
-        try {
-          const check = await fetch(`/api/auth/check?token=${data.token}`);
-          const result = await check.json();
-          if (result.authenticated) {
-            if (pollRef.current) clearInterval(pollRef.current);
-            router.push("/");
-          }
-        } catch {
-          // ignore polling errors
-        }
-      }, 2000);
     } catch {
       setError(t("login.connectionError"));
     }
-  }, [router, t]);
+  }, [initToken, t]);
 
   useEffect(() => {
     return () => {

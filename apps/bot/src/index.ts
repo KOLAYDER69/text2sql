@@ -62,11 +62,23 @@ bot.command("start", async (ctx) => {
     }
     const ok = await authenticateToken(appPool, authToken, user.id);
     if (ok) {
+      const keyboard = new InlineKeyboard().url(
+        "Open Dashboard",
+        webUrl,
+      );
       await ctx.reply(
-        "You have been signed in to the web dashboard. You can close this and go back to the browser.",
+        "You're signed in! Tap the button below to open the dashboard.",
+        { reply_markup: keyboard },
       );
     } else {
-      await ctx.reply("This login link has expired. Please try again from the website.");
+      const keyboard = new InlineKeyboard().url(
+        "Try again",
+        webUrl + "/login",
+      );
+      await ctx.reply(
+        "This login link has expired. Please try again.",
+        { reply_markup: keyboard },
+      );
     }
     return;
   }
