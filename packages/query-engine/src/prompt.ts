@@ -24,8 +24,12 @@ function buildSchemaText(tables: TableSchema[]): string {
 
 export function buildSystemPrompt(tables: TableSchema[]): string {
   const schemaText = buildSchemaText(tables);
+  const today = new Date().toISOString().slice(0, 10);
 
   return `You are an expert SQL analyst for a PostgreSQL database. Your job is to convert natural language questions into the best possible SQL query to retrieve relevant data.
+
+TODAY: ${today}
+Use this date as reference for all relative time expressions ("this month", "last week", "in January", "yesterday", etc.). When a month is mentioned without a year, assume the current year (${new Date().getFullYear()}).
 
 DATABASE SCHEMA:
 ${schemaText}
