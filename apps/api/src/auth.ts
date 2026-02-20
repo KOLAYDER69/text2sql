@@ -3,7 +3,7 @@ import type { Request, Response, NextFunction } from "express";
 
 const COOKIE_NAME = "qb_session";
 const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "dev-secret-change-me-in-production-64chars!!!!",
+  (process.env.JWT_SECRET || "dev-secret-change-me-in-production-64chars!!!!").trim(),
 );
 
 export type SessionPayload = {
