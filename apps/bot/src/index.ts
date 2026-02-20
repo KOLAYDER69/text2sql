@@ -16,12 +16,15 @@ import {
   createInvite,
   listInvites,
   authenticateToken,
+  saveSuggestions,
+  getLatestSuggestions,
   saveQueryHistory,
   getQueryHistory,
   createSchedule,
   getUserSchedules,
   deactivateSchedule,
 } from "@querybot/engine";
+import { Cron } from "croner";
 import { initScheduler, registerJob } from "./scheduler";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -153,8 +156,14 @@ async function showWelcome(ctx: { reply: (text: string, opts?: Record<string, un
 
 async function showSuggestions(ctx: { reply: (text: string, opts?: Record<string, unknown>) => Promise<unknown> }) {
   try {
-    const tables = await getSchema(pool);
-    const suggestions = await generateSuggestions(tables);
+    const suggestions = await getLatestSuggestions(appPool);
+
+    if (!suggestions || suggestions.length === 0) {
+      await ctx.reply(
+        "Ask any question about your data in natural language.\n\n/help — all commands",
+      );
+      return;
+    }
 
     const keyboard = new InlineKeyboard();
     for (const s of suggestions) {
@@ -171,10 +180,7 @@ async function showSuggestions(ctx: { reply: (text: string, opts?: Record<string
     );
   } catch {
     await ctx.reply(
-      "Try asking a question like:\n" +
-        "- Top 5 products by price\n" +
-        "- Orders by status\n\n" +
-        "/help — all commands",
+      "Ask any question about your data in natural language.\n\n/help — all commands",
     );
   }
 }
@@ -525,6 +531,19 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// ─── Suggestions refresh (hourly + on startup) ───
+
+async function refreshSuggestions() {
+  try {
+    const tables = await getSchema(pool);
+    const suggestions = await generateSuggestions(tables);
+    await saveSuggestions(appPool, suggestions);
+    console.log("Suggestions refreshed:", suggestions.length);
+  } catch (err) {
+    console.error("Failed to refresh suggestions:", err instanceof Error ? err.message : err);
+  }
+}
+
 // ─── Start bot + scheduler ───
 
 async function startWithRetry(maxRetries = 5) {
@@ -551,7 +570,14 @@ async function startWithRetry(maxRetries = 5) {
   }
 }
 
-startWithRetry().catch((err) => {
-  console.error("Fatal:", err);
-  process.exit(1);
-});
+startWithRetry()
+  .then(() => {
+    // Generate suggestions on startup
+    refreshSuggestions();
+    // Refresh every hour
+    new Cron("0 * * * *", () => refreshSuggestions());
+  })
+  .catch((err) => {
+    console.error("Fatal:", err);
+    process.exit(1);
+  });

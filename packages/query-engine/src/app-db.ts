@@ -249,6 +249,27 @@ export async function checkAuthToken(
   };
 }
 
+// ─── Suggestions ───
+
+export async function saveSuggestions(
+  pool: Pool,
+  suggestions: string[],
+): Promise<void> {
+  await pool.query(
+    "INSERT INTO app_suggestions (suggestions) VALUES ($1)",
+    [JSON.stringify(suggestions)],
+  );
+}
+
+export async function getLatestSuggestions(
+  pool: Pool,
+): Promise<string[] | null> {
+  const { rows } = await pool.query<{ suggestions: string[] }>(
+    "SELECT suggestions FROM app_suggestions ORDER BY created_at DESC LIMIT 1",
+  );
+  return rows[0]?.suggestions ?? null;
+}
+
 // ─── Schedules ───
 
 export async function createSchedule(
