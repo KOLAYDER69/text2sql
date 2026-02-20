@@ -434,14 +434,31 @@ function escapeHtml(s: string): string {
 
 // ─── Start bot + scheduler ───
 
-async function main() {
-  await initScheduler(bot, appPool, pool);
-  await bot.start({
-    onStart: () => console.log("QueryBot started (long polling)"),
-  });
+async function startWithRetry(maxRetries = 5) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await initScheduler(bot, appPool, pool);
+      await bot.start({
+        onStart: () => console.log("QueryBot started (long polling)"),
+      });
+      return;
+    } catch (err) {
+      const isConflict =
+        err instanceof Error && err.message.includes("409");
+      if (isConflict && attempt < maxRetries) {
+        const delay = attempt * 3000;
+        console.log(
+          `Conflict with another instance, retrying in ${delay / 1000}s (attempt ${attempt}/${maxRetries})...`,
+        );
+        await new Promise((r) => setTimeout(r, delay));
+      } else {
+        throw err;
+      }
+    }
+  }
 }
 
-main().catch((err) => {
+startWithRetry().catch((err) => {
   console.error("Fatal:", err);
   process.exit(1);
 });
