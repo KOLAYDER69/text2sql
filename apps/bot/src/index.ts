@@ -551,7 +551,12 @@ async function startWithRetry(maxRetries = 5) {
     try {
       await initScheduler(bot, appPool, pool);
       await bot.start({
-        onStart: () => console.log("QueryBot started (long polling)"),
+        onStart: () => {
+          console.log("QueryBot started (long polling)");
+          // Generate suggestions on startup + refresh every hour
+          refreshSuggestions();
+          new Cron("0 * * * *", () => refreshSuggestions());
+        },
       });
       return;
     } catch (err) {
@@ -570,14 +575,7 @@ async function startWithRetry(maxRetries = 5) {
   }
 }
 
-startWithRetry()
-  .then(() => {
-    // Generate suggestions on startup
-    refreshSuggestions();
-    // Refresh every hour
-    new Cron("0 * * * *", () => refreshSuggestions());
-  })
-  .catch((err) => {
-    console.error("Fatal:", err);
-    process.exit(1);
-  });
+startWithRetry().catch((err) => {
+  console.error("Fatal:", err);
+  process.exit(1);
+});
