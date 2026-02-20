@@ -11,6 +11,8 @@ import {
   analyzeResults,
   formatTelegram,
   generateSuggestions,
+  buildChartConfig,
+  translateQuestion,
   findUserByTelegramId,
   findUserById,
   createUser,
@@ -28,6 +30,7 @@ import {
   getUserSchedules,
   deactivateSchedule,
 } from "@querybot/engine";
+import { buildQuickChartUrl } from "./chart-url";
 import { Cron } from "croner";
 import { initScheduler, registerJob } from "./scheduler";
 
@@ -528,7 +531,10 @@ bot.on("message:text", async (ctx) => {
 async function processQuery(
   ctx: {
     reply: (text: string, opts?: Record<string, unknown>) => Promise<{ chat: { id: number }; message_id: number }>;
-    api: { editMessageText: (chatId: number, msgId: number, text: string, opts?: Record<string, unknown>) => Promise<unknown> };
+    api: {
+      editMessageText: (chatId: number, msgId: number, text: string, opts?: Record<string, unknown>) => Promise<unknown>;
+      sendPhoto: (chatId: number | string, photo: string, other?: Record<string, unknown>) => Promise<unknown>;
+    };
   },
   question: string,
 ): Promise<void> {
@@ -540,9 +546,14 @@ async function processQuery(
   const msgId = status.message_id;
 
   try {
-    // Step 2: Get schema & generate SQL
-    const tables = await getSchema(pool);
-    const sql = await generateSQL(question, tables);
+    // Step 2: Get schema & translate question to English (in parallel)
+    const [tables, translated] = await Promise.all([
+      getSchema(pool),
+      translateQuestion(question),
+    ]);
+
+    // Step 3: Generate SQL from English question (more reliable)
+    const sql = await generateSQL(translated.english, tables);
 
     await ctx.api.editMessageText(chatId, msgId, "⚡ Выполняю запрос...");
 
@@ -594,6 +605,17 @@ async function processQuery(
       fields: result.fields, executionMs: result.executionMs,
     });
     await sendSafe(ctx, formatted);
+
+    // Chart image (if data is suitable)
+    const chart = buildChartConfig(result.fields, result.rows);
+    if (chart) {
+      try {
+        const chartUrl = buildQuickChartUrl(chart);
+        await ctx.api.sendPhoto(chatId, chartUrl);
+      } catch {
+        // Chart is non-critical — skip on error
+      }
+    }
 
     // SQL (collapsed, at the end)
     const sqlBlock = `<blockquote expandable>🔍 SQL:\n<pre>${escapeHtml(result.sql)}</pre></blockquote>`;

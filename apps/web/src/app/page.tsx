@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useI18n, LangSwitcher } from "@/lib/i18n";
+import { QueryChart } from "./chart";
 
 function formatAnalysis(text: string): string {
   let out = text
@@ -26,6 +27,13 @@ function formatAnalysis(text: string): string {
   return out;
 }
 
+type ChartDataset = { label: string; data: number[] };
+type ChartConfig = {
+  type: "line" | "bar" | "pie";
+  labels: string[];
+  datasets: ChartDataset[];
+};
+
 type QueryResult = {
   question: string;
   sql: string;
@@ -35,6 +43,7 @@ type QueryResult = {
   executionMs: number;
   error?: string;
   analysis?: string;
+  chart?: ChartConfig;
 };
 
 type HistoryItem = {
@@ -359,6 +368,8 @@ export default function Home() {
                   </pre>
                 </div>
               )}
+
+              {result.chart && <QueryChart config={result.chart} />}
 
               {result.rows && result.rows.length > 0 && result.fields && (
                 <div className="bg-white/[0.03] border border-white/10 rounded-xl overflow-hidden">

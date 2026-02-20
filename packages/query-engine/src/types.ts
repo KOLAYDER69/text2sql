@@ -2,8 +2,10 @@ export type ColumnInfo = {
   table_name: string;
   column_name: string;
   data_type: string;
+  udt_name: string;
   is_nullable: string;
   column_default: string | null;
+  enum_values?: string[];
 };
 
 export type TableSchema = {
@@ -24,6 +26,17 @@ export type QueryResult = {
   executionMs: number;
 };
 
+export type ChartDataset = {
+  label: string;
+  data: number[];
+};
+
+export type ChartConfig = {
+  type: "line" | "bar" | "pie";
+  labels: string[];
+  datasets: ChartDataset[];
+};
+
 export type QueryResponse = {
   question: string;
   sql: string;
@@ -33,4 +46,5 @@ export type QueryResponse = {
   executionMs: number;
   error?: string;
   analysis?: string;
+  chart?: ChartConfig;
 };

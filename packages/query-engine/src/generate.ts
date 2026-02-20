@@ -8,7 +8,7 @@ export async function generateSQL(
   tables: TableSchema[],
 ): Promise<string> {
   const { text } = await generateText({
-    model: anthropic("claude-opus-4-6"),
+    model: anthropic("claude-sonnet-4-6"),
     system: buildSystemPrompt(tables),
     prompt: question,
     maxTokens: 1024,

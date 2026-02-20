@@ -5,8 +5,16 @@ function buildSchemaText(tables: TableSchema[]): string {
     .map((t) => {
       const cols = t.columns
         .map(
-          (c) =>
-            `    ${c.column_name} ${c.data_type}${c.is_nullable === "NO" ? " NOT NULL" : ""}${c.column_default ? ` DEFAULT ${c.column_default}` : ""}`,
+          (c) => {
+            // Show actual enum type name instead of "USER-DEFINED"
+            const typeName =
+              c.data_type === "USER-DEFINED" ? c.udt_name : c.data_type;
+            let line = `    ${c.column_name} ${typeName}${c.is_nullable === "NO" ? " NOT NULL" : ""}${c.column_default ? ` DEFAULT ${c.column_default}` : ""}`;
+            if (c.enum_values && c.enum_values.length > 0) {
+              line += ` -- enum values: ${c.enum_values.map((v) => `'${v}'`).join(", ")}`;
+            }
+            return line;
+          },
         )
         .join("\n");
       return `  ${t.name}:\n${cols}`;
@@ -26,13 +34,14 @@ RULES:
 1. Output ONLY the SQL query — no explanations, no markdown, no code blocks.
 2. ONLY generate SELECT queries. Never INSERT, UPDATE, DELETE, DROP, or any data-modifying statement.
 3. Use proper PostgreSQL syntax. Use CTEs, window functions, subqueries as needed.
-4. Use Russian column aliases when the question is in Russian.
+4. The question has been pre-translated to English. Use English column aliases.
 5. Limit results to 50 rows unless the user requests more.
 6. Always use table and column names exactly as shown in the schema.
 7. For aggregations, always include meaningful aliases.
+8. For columns with enum values listed in the schema (-- values: ...), ONLY use those exact values in WHERE clauses. Never guess or invent enum values.
 
 ANALYTICAL QUESTIONS:
-- For "why" or comparison questions (e.g. "почему X ниже Y"), generate SQL that retrieves the comparison data needed to reason about it. For example: aggregate by time period, compare metrics, show breakdowns.
+- For "why" or comparison questions, generate SQL that retrieves the comparison data needed to reason about it. For example: aggregate by time period, compare metrics, show breakdowns.
 - For broad analytical questions, use CTEs to gather multiple perspectives in one query.
 - Think step-by-step about what data would help answer the question, then write the SQL to get it.
 - NEVER return "-- UNSUPPORTED" for questions that can be partially answered with existing data.

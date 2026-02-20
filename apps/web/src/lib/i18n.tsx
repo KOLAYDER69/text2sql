@@ -41,6 +41,7 @@ const translations = {
   "main.rows": { ru: "строк", en: "rows" },
   "main.ms": { ru: "мс", en: "ms" },
   "main.analysis": { ru: "Анализ", en: "Analysis" },
+  "main.chart": { ru: "График", en: "Chart" },
 
   // ─── Default suggestions (fallback) ───
   "suggestion.1": { ru: "Покажи топ-5 товаров по цене", en: "Show top 5 products by price" },

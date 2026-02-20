@@ -5,6 +5,8 @@ import { validateSQL } from "./validate";
 import { executeSQL } from "./execute";
 import { analyzeResults } from "./analyze";
 import { formatTelegram, formatHTML } from "./format";
+import { buildChartConfig } from "./chart";
+import { translateQuestion } from "./translate";
 import type { QueryResponse } from "./types";
 
 export { getSchema, clearSchemaCache } from "./introspect";
@@ -15,6 +17,8 @@ export { analyzeResults } from "./analyze";
 export { formatTelegram, formatHTML } from "./format";
 export { buildSystemPrompt } from "./prompt";
 export { generateSuggestions } from "./suggestions";
+export { buildChartConfig } from "./chart";
+export { translateQuestion } from "./translate";
 export * from "./types";
 export * from "./app-db";
 
@@ -34,16 +38,19 @@ export function createAppPool(appDatabaseUrl: string): pg.Pool {
   });
 }
 
-/** Full pipeline: question → SQL → results → analysis */
+/** Full pipeline: question → translate → SQL → results → analysis */
 export async function query(
   pool: pg.Pool,
   question: string,
 ): Promise<QueryResponse> {
-  // 1. Get schema
-  const tables = await getSchema(pool);
+  // 1. Get schema + translate question to English (in parallel)
+  const [tables, translated] = await Promise.all([
+    getSchema(pool),
+    translateQuestion(question),
+  ]);
 
-  // 2. Generate SQL
-  const sql = await generateSQL(question, tables);
+  // 2. Generate SQL from English question (more reliable)
+  const sql = await generateSQL(translated.english, tables);
 
   // 3. Validate
   const validation = validateSQL(sql);
@@ -78,6 +85,9 @@ export async function query(
       // Analysis is non-critical — skip on error
     }
 
+    // 6. Build chart config (if data is suitable)
+    const chart = buildChartConfig(result.fields, result.rows) ?? undefined;
+
     return {
       question,
       sql: result.sql,
@@ -86,6 +96,7 @@ export async function query(
       fields: result.fields,
       executionMs: result.executionMs,
       analysis,
+      chart,
     };
   } catch (err) {
     return {
