@@ -611,10 +611,13 @@ async function processQuery(
     if (chart) {
       try {
         const chartUrl = buildQuickChartUrl(chart);
+        console.log("Chart URL length:", chartUrl.length, "type:", chart.type);
         await ctx.api.sendPhoto(chatId, chartUrl);
-      } catch {
-        // Chart is non-critical — skip on error
+      } catch (err) {
+        console.error("Chart send failed:", err instanceof Error ? err.message : err);
       }
+    } else {
+      console.log("No chart: fields=", result.fields, "rows=", result.rowCount);
     }
 
     // SQL (collapsed, at the end)
