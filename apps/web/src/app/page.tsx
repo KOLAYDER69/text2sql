@@ -36,6 +36,7 @@ export default function Home() {
   const [result, setResult] = useState<QueryResult | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingStage, setLoadingStage] = useState(0);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [user, setUser] = useState<UserInfo | null>(null);
@@ -73,7 +74,13 @@ export default function Home() {
     if (!question.trim() || loading) return;
     setInput("");
     setLoading(true);
+    setLoadingStage(0);
     setResult(null);
+
+    // Cycle through stages while waiting
+    const stageTimer = setInterval(() => {
+      setLoadingStage((s) => Math.min(s + 1, 2));
+    }, 3000);
 
     try {
       const res = await fetch("/api/query", {
@@ -101,6 +108,7 @@ export default function Home() {
         error: t("main.connectionError"),
       });
     } finally {
+      clearInterval(stageTimer);
       setLoading(false);
     }
   }
@@ -286,9 +294,20 @@ export default function Home() {
           {/* Loading state */}
           {loading && (
             <div className="flex items-center justify-center h-full">
-              <div className="flex items-center gap-3 text-white/50">
-                <div className="animate-spin h-5 w-5 border-2 border-white/20 border-t-white rounded-full" />
-                {t("main.running")}
+              <div className="flex flex-col items-center gap-4">
+                <div className="animate-spin h-6 w-6 border-2 border-blue-500/30 border-t-blue-400 rounded-full" />
+                <div className="text-center">
+                  <p className="text-white/60 text-sm font-medium">
+                    {loadingStage === 0 && t("main.stageSQL")}
+                    {loadingStage === 1 && t("main.stageExecute")}
+                    {loadingStage === 2 && t("main.stageAnalyze")}
+                  </p>
+                  <div className="flex items-center gap-1.5 mt-2 justify-center">
+                    {[0, 1, 2].map((s) => (
+                      <div key={s} className={`h-1 w-8 rounded-full transition-all duration-500 ${s <= loadingStage ? "bg-blue-500" : "bg-white/10"}`} />
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           )}

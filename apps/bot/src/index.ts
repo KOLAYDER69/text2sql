@@ -5,6 +5,10 @@ import {
   createAppPool,
   query,
   getSchema,
+  generateSQL,
+  validateSQL,
+  executeSQL,
+  analyzeResults,
   formatTelegram,
   generateSuggestions,
   findUserByTelegramId,
@@ -522,51 +526,76 @@ bot.on("message:text", async (ctx) => {
 });
 
 async function processQuery(
-  ctx: { reply: (text: string, opts?: Record<string, unknown>) => Promise<unknown> },
+  ctx: {
+    reply: (text: string, opts?: Record<string, unknown>) => Promise<{ chat: { id: number }; message_id: number }>;
+    api: { editMessageText: (chatId: number, msgId: number, text: string, opts?: Record<string, unknown>) => Promise<unknown> };
+  },
   question: string,
 ): Promise<void> {
   const user = getUser(ctx);
 
-  await ctx.reply("⏳ Выполняю запрос...");
+  // Step 1: Status message
+  const status = await ctx.reply("🧠 Генерирую SQL...");
+  const chatId = status.chat.id;
+  const msgId = status.message_id;
 
   try {
-    const result = await query(pool, question);
+    // Step 2: Get schema & generate SQL
+    const tables = await getSchema(pool);
+    const sql = await generateSQL(question, tables);
 
-    // Save to history
-    await saveQueryHistory(appPool, {
-      user_id: user.id,
-      platform: "telegram",
-      question,
-      sql: result.sql,
-      row_count: result.rowCount,
-      execution_ms: result.executionMs,
-      error: result.error,
-    });
+    await ctx.api.editMessageText(chatId, msgId, "⚡ Выполняю запрос...");
 
-    if (result.error) {
-      await ctx.reply(
-        `❌ ${result.error}\n\n🔍 SQL:\n<pre>${escapeHtml(result.sql)}</pre>`,
-        { parse_mode: "HTML" },
-      );
+    // Step 3: Validate
+    const validation = validateSQL(sql);
+    if (!validation.valid) {
+      await saveQueryHistory(appPool, {
+        user_id: user.id, platform: "telegram", question, sql,
+        row_count: 0, execution_ms: 0, error: validation.error,
+      });
+      await ctx.api.editMessageText(chatId, msgId, `❌ ${validation.error}`);
       return;
     }
 
-    // SQL block
-    const sqlBlock = `🔍 SQL:\n<pre>${escapeHtml(result.sql)}</pre>`;
+    // Step 4: Execute
+    const result = await executeSQL(pool, sql);
 
-    // Data block
+    // Save to history (fire-and-forget)
+    saveQueryHistory(appPool, {
+      user_id: user.id, platform: "telegram", question, sql: result.sql,
+      row_count: result.rowCount, execution_ms: result.executionMs, error: undefined,
+    }).catch(() => {});
+
+    await ctx.api.editMessageText(chatId, msgId, "💡 Анализирую данные...");
+
+    // Step 5: Analyze with AI
+    let analysis = "";
+    try {
+      analysis = await analyzeResults(question, result.sql, result.rows, result.fields, result.rowCount, tables);
+    } catch {
+      // non-critical
+    }
+
+    // Step 6: Delete status message
+    try {
+      await ctx.api.editMessageText(chatId, msgId, "✅ Готово");
+    } catch { /* ignore */ }
+
+    // Step 7: Send beautiful response
+    // Analysis first (main answer)
+    if (analysis) {
+      await sendSafe(ctx, `💡 <b>Ответ:</b>\n\n${escapeHtml(analysis)}`);
+    }
+
+    // Data table
     const formatted = formatTelegram({
-      sql: result.sql,
-      rows: result.rows,
-      rowCount: result.rowCount,
-      fields: result.fields,
-      executionMs: result.executionMs,
+      sql: result.sql, rows: result.rows, rowCount: result.rowCount,
+      fields: result.fields, executionMs: result.executionMs,
     });
+    await sendSafe(ctx, formatted);
 
-    // Analysis block
-    const analysisBlock = result.analysis
-      ? `\n\n💡 <b>Анализ:</b>\n${escapeHtml(result.analysis)}`
-      : "";
+    // SQL (collapsed, at the end)
+    const sqlBlock = `<blockquote expandable>🔍 SQL:\n<pre>${escapeHtml(result.sql)}</pre></blockquote>`;
 
     // Schedule buttons
     const hash = storeQuestion(question);
@@ -574,38 +603,46 @@ async function processQuery(
       .text("📋 Ежедневно", `sched:daily:${hash}`)
       .text("📋 Еженедельно", `sched:weekly:${hash}`);
 
-    const message = `${sqlBlock}\n\n${formatted}${analysisBlock}`;
+    await sendSafe(ctx, sqlBlock, scheduleKeyboard);
 
-    // Telegram messages have 4096 char limit
-    if (message.length > 4096) {
-      await ctx.reply(sqlBlock, { parse_mode: "HTML" });
-      const dataAndAnalysis = `${formatted}${analysisBlock}`;
-      if (dataAndAnalysis.length > 4096) {
-        await ctx.reply(formatted, { parse_mode: "HTML" });
-        if (analysisBlock) {
-          await ctx.reply(analysisBlock.trim(), {
-            parse_mode: "HTML",
-            reply_markup: scheduleKeyboard,
-          });
-        } else {
-          await ctx.reply("—", { reply_markup: scheduleKeyboard });
-        }
-      } else {
-        await ctx.reply(dataAndAnalysis, {
-          parse_mode: "HTML",
-          reply_markup: scheduleKeyboard,
-        });
-      }
-    } else {
-      await ctx.reply(message, {
-        parse_mode: "HTML",
-        reply_markup: scheduleKeyboard,
-      });
-    }
   } catch (err) {
-    await ctx.reply(
-      "❌ Ошибка: " + (err instanceof Error ? err.message : "Unknown"),
-    );
+    try {
+      await ctx.api.editMessageText(
+        chatId, msgId,
+        "❌ Ошибка: " + (err instanceof Error ? err.message : "Unknown"),
+      );
+    } catch {
+      await ctx.reply("❌ Ошибка: " + (err instanceof Error ? err.message : "Unknown"));
+    }
+  }
+}
+
+/** Send message safely, splitting if >4096 chars */
+async function sendSafe(
+  ctx: { reply: (text: string, opts?: Record<string, unknown>) => Promise<unknown> },
+  text: string,
+  keyboard?: InlineKeyboard,
+): Promise<void> {
+  const opts: Record<string, unknown> = { parse_mode: "HTML" };
+  if (keyboard) opts.reply_markup = keyboard;
+
+  if (text.length <= 4096) {
+    await ctx.reply(text, opts);
+    return;
+  }
+
+  // Split on newlines, send in chunks
+  const lines = text.split("\n");
+  let chunk = "";
+  for (const line of lines) {
+    if (chunk.length + line.length + 1 > 4000) {
+      await ctx.reply(chunk, { parse_mode: "HTML" });
+      chunk = "";
+    }
+    chunk += (chunk ? "\n" : "") + line;
+  }
+  if (chunk) {
+    await ctx.reply(chunk, opts);
   }
 }
 
