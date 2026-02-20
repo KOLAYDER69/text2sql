@@ -65,6 +65,11 @@ const translations = {
   "invites.statusActive": { ru: "Активен", en: "Active" },
   "invites.copied": { ru: "Скопировано!", en: "Copied!" },
   "invites.copy": { ru: "Копировать", en: "Copy" },
+  "invites.newReady": { ru: "Инвайт создан!", en: "Invite ready!" },
+  "invites.linkLabel": { ru: "Ссылка для приглашения", en: "Invite link" },
+  "invites.howItWorks": { ru: "Отправьте эту ссылку — получатель нажмёт Start в боте и получит доступ", en: "Share this link — recipient taps Start in the bot and gets access" },
+  "invites.dismiss": { ru: "Скрыть", en: "Dismiss" },
+  "invites.copyLink": { ru: "Копировать ссылку", en: "Copy link" },
 
   // ─── Profile page ───
   "profile.title": { ru: "Профиль", en: "Profile" },

@@ -20,6 +20,7 @@ export default function InvitesPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [newInvite, setNewInvite] = useState<{ code: string; deepLink: string } | null>(null);
 
   const botName = "leadsaibot";
 
@@ -45,13 +46,15 @@ export default function InvitesPage() {
 
   async function createInvite() {
     setCreating(true);
+    setNewInvite(null);
     try {
       const res = await fetch("/api/invites", { method: "POST" });
       if (res.status === 401) {
         window.location.href = "/login";
         return;
       }
-      await res.json();
+      const data = await res.json();
+      setNewInvite({ code: data.code, deepLink: data.deepLink });
       loadInvites();
     } catch {
       // ignore
@@ -60,11 +63,14 @@ export default function InvitesPage() {
     }
   }
 
-  function copyLink(invite: Invite) {
-    const link = `https://t.me/${botName}?start=${invite.code}`;
-    navigator.clipboard.writeText(link);
-    setCopiedId(invite.id);
+  function copyText(text: string, id: number) {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  }
+
+  function getDeepLink(code: string) {
+    return `https://t.me/${botName}?start=${code}`;
   }
 
   const total = invites.length;
@@ -88,22 +94,13 @@ export default function InvitesPage() {
           </Link>
         </div>
         <nav className="px-3 space-y-1 flex-1">
-          <Link
-            href="/"
-            className="block px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition"
-          >
+          <Link href="/" className="block px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition">
             {t("nav.queries")}
           </Link>
-          <Link
-            href="/invites"
-            className="block px-3 py-2 rounded-lg text-sm text-white bg-white/5 font-medium"
-          >
+          <Link href="/invites" className="block px-3 py-2 rounded-lg text-sm text-white bg-white/5 font-medium">
             {t("nav.invites")}
           </Link>
-          <Link
-            href="/profile"
-            className="block px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition"
-          >
+          <Link href="/profile" className="block px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition">
             {t("nav.profile")}
           </Link>
         </nav>
@@ -128,9 +125,7 @@ export default function InvitesPage() {
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-2xl font-bold">{t("invites.title")}</h1>
-                <p className="text-white/40 text-sm mt-1">
-                  {t("invites.subtitle")}
-                </p>
+                <p className="text-white/40 text-sm mt-1">{t("invites.subtitle")}</p>
               </div>
               <button
                 onClick={createInvite}
@@ -140,6 +135,41 @@ export default function InvitesPage() {
                 {creating ? t("invites.creating") : t("invites.create")}
               </button>
             </div>
+
+            {/* New invite card */}
+            {newInvite && (
+              <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-5 space-y-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <p className="text-sm font-medium text-emerald-400">{t("invites.newReady")}</p>
+                </div>
+
+                {/* Deep link */}
+                <div>
+                  <p className="text-xs text-white/40 mb-1.5">{t("invites.linkLabel")}</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-sm font-mono text-white/80 truncate">
+                      {newInvite.deepLink}
+                    </code>
+                    <button
+                      onClick={() => copyText(newInvite.deepLink, -1)}
+                      className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs transition shrink-0"
+                    >
+                      {copiedId === -1 ? t("invites.copied") : t("invites.copy")}
+                    </button>
+                  </div>
+                </div>
+
+                <p className="text-xs text-white/30">{t("invites.howItWorks")}</p>
+
+                <button
+                  onClick={() => setNewInvite(null)}
+                  className="text-xs text-white/30 hover:text-white/50 transition"
+                >
+                  {t("invites.dismiss")}
+                </button>
+              </div>
+            )}
 
             {/* Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -189,6 +219,7 @@ export default function InvitesPage() {
                         const isUsed = invite.used_by !== null;
                         const isExpired =
                           !isUsed && invite.expires_at && new Date(invite.expires_at) < new Date();
+                        const link = getDeepLink(invite.code);
 
                         return (
                           <tr
@@ -201,15 +232,15 @@ export default function InvitesPage() {
                             <td className="px-4 py-3 font-mono">{invite.code}</td>
                             <td className="px-4 py-3">
                               {isUsed ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-400 border border-blue-500/20">
                                   {t("invites.statusUsed")}
                                 </span>
                               ) : isExpired ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-white/5 text-white/30 border border-white/10">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-white/5 text-white/30 border border-white/10">
                                   {t("invites.statusExpired")}
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                                   {t("invites.statusActive")}
                                 </span>
                               )}
@@ -223,14 +254,14 @@ export default function InvitesPage() {
                                 : "—"}
                             </td>
                             <td className="px-4 py-3 text-right">
-                              {!isUsed && !isExpired && (
+                              {!isUsed && !isExpired ? (
                                 <button
-                                  onClick={() => copyLink(invite)}
+                                  onClick={() => copyText(link, invite.id)}
                                   className="text-xs text-blue-400 hover:text-blue-300 transition"
                                 >
-                                  {copiedId === invite.id ? t("invites.copied") : t("invites.copy")}
+                                  {copiedId === invite.id ? t("invites.copied") : t("invites.copyLink")}
                                 </button>
-                              )}
+                              ) : null}
                             </td>
                           </tr>
                         );

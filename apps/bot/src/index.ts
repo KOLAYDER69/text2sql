@@ -301,7 +301,7 @@ bot.command("history", async (ctx) => {
 
 // ─── /generate — create invite with deep link ───
 
-bot.command("generate", async (ctx) => {
+async function handleGenerate(ctx: { reply: (text: string, opts?: Record<string, unknown>) => Promise<unknown> }) {
   const user = getUser(ctx);
   const code = crypto.randomBytes(4).toString("hex");
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -310,53 +310,34 @@ bot.command("generate", async (ctx) => {
 
   const deepLink = `https://t.me/${botUsername}?start=${code}`;
 
-  const keyboard = new InlineKeyboard().url("Activate Access", deepLink);
+  const keyboard = new InlineKeyboard().url("Открыть ссылку", deepLink);
 
-  // Professional invite message for forwarding
+  // Message with copyable link text
   await ctx.reply(
-    `<b>You're Invited to Leads AI — Insights</b>\n\n` +
-      `You have been granted access to our private AI-powered database analytics tool.\n\n` +
-      `Query your DB using natural language.\n` +
-      `Get daily insights automatically.\n` +
-      `Sync history between Web and Mobile.\n\n` +
-      `<i>This invite expires in 7 days.</i>`,
+    `✅ <b>Инвайт создан!</b>\n\n` +
+      `📎 Ссылка для приглашения:\n<code>${deepLink}</code>\n\n` +
+      `Отправьте эту ссылку новому пользователю — он нажмёт Start и получит доступ.\n\n` +
+      `⏳ Действует 7 дней.`,
     { parse_mode: "HTML", reply_markup: keyboard },
   );
 
-  // Show existing invites summary to the admin
+  // Show existing invites summary
   const invites = await listInvites(appPool, user.id);
+  const usedCount = invites.filter((i) => i.used_by !== null).length;
+  const activeCount = invites.filter(
+    (i) => i.used_by === null && (!i.expires_at || new Date(i.expires_at) > new Date()),
+  ).length;
+
   if (invites.length > 1) {
-    let summary = `\n<b>Your invites (${invites.length}):</b>\n`;
-    for (const inv of invites.slice(0, 5)) {
-      const status = inv.used_by ? "used" : "active";
-      summary += `<code>${inv.code}</code> — ${status}\n`;
-    }
-    await ctx.reply(summary, { parse_mode: "HTML" });
+    await ctx.reply(
+      `📊 <b>Ваши инвайты:</b> ${invites.length} всего · ${activeCount} активных · ${usedCount} использовано`,
+      { parse_mode: "HTML" },
+    );
   }
-});
+}
 
-// Keep /invite as alias for /generate
-bot.command("invite", async (ctx) => {
-  const user = getUser(ctx);
-  const code = crypto.randomBytes(4).toString("hex");
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
-  await createInvite(appPool, user.id, code, expiresAt);
-
-  const deepLink = `https://t.me/${botUsername}?start=${code}`;
-
-  const keyboard = new InlineKeyboard().url("Activate Access", deepLink);
-
-  await ctx.reply(
-    `<b>You're Invited to Leads AI — Insights</b>\n\n` +
-      `You have been granted access to our private AI-powered database analytics tool.\n\n` +
-      `Query your DB using natural language.\n` +
-      `Get daily insights automatically.\n` +
-      `Sync history between Web and Mobile.\n\n` +
-      `<i>This invite expires in 7 days.</i>`,
-    { parse_mode: "HTML", reply_markup: keyboard },
-  );
-});
+bot.command("generate", async (ctx) => handleGenerate(ctx));
+bot.command("invite", async (ctx) => handleGenerate(ctx));
 
 // ─── /schedule ───
 
