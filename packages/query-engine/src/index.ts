@@ -12,11 +12,21 @@ export { validateSQL } from "./validate";
 export { executeSQL } from "./execute";
 export { formatTelegram, formatHTML } from "./format";
 export { buildSystemPrompt } from "./prompt";
+export { generateSuggestions } from "./suggestions";
 export * from "./types";
+export * from "./app-db";
 
 export function createPool(databaseUrl: string): pg.Pool {
   return new pg.Pool({
     connectionString: databaseUrl,
+    max: 5,
+    ssl: { rejectUnauthorized: false },
+  });
+}
+
+export function createAppPool(appDatabaseUrl: string): pg.Pool {
+  return new pg.Pool({
+    connectionString: appDatabaseUrl,
     max: 5,
     ssl: { rejectUnauthorized: false },
   });

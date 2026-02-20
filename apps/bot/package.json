@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@querybot/engine": "*",
+    "croner": "^10.0.1",
     "grammy": "^1.30.0"
   },
   "devDependencies": {
