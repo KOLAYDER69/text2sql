@@ -8,12 +8,14 @@ import {
   formatTelegram,
   generateSuggestions,
   findUserByTelegramId,
+  findUserById,
   createUser,
   updateLastSeen,
   findInviteByCode,
   useInvite,
   createInvite,
   listInvites,
+  authenticateToken,
   saveQueryHistory,
   getQueryHistory,
   createSchedule,
@@ -44,6 +46,27 @@ bot.command("start", async (ctx) => {
   const payload = ctx.match?.trim();
   const telegramId = ctx.from?.id;
   if (!telegramId) return;
+
+  // Deep link auth: /start auth_TOKEN
+  if (payload && payload.startsWith("auth_")) {
+    const authToken = payload.slice(5);
+    const user = await findUserByTelegramId(appPool, telegramId);
+    if (!user) {
+      await ctx.reply(
+        "You don't have access yet. Ask for an invite link first.\n\nContact @Nickelodeon for access.",
+      );
+      return;
+    }
+    const ok = await authenticateToken(appPool, authToken, user.id);
+    if (ok) {
+      await ctx.reply(
+        "You have been signed in to the web dashboard. You can close this and go back to the browser.",
+      );
+    } else {
+      await ctx.reply("This login link has expired. Please try again from the website.");
+    }
+    return;
+  }
 
   // Deep link invite: /start INVITE_CODE
   if (payload) {

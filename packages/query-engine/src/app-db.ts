@@ -210,6 +210,45 @@ export async function getQueryHistory(
   return rows;
 }
 
+// ─── Auth Tokens ───
+
+export async function createAuthToken(
+  pool: Pool,
+  token: string,
+): Promise<void> {
+  await pool.query(
+    "INSERT INTO app_auth_tokens (token) VALUES ($1)",
+    [token],
+  );
+}
+
+export async function authenticateToken(
+  pool: Pool,
+  token: string,
+  userId: number,
+): Promise<boolean> {
+  const result = await pool.query(
+    "UPDATE app_auth_tokens SET user_id = $1, authenticated_at = now() WHERE token = $2 AND user_id IS NULL AND created_at > now() - interval '5 minutes'",
+    [userId, token],
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+export async function checkAuthToken(
+  pool: Pool,
+  token: string,
+): Promise<{ authenticated: boolean; userId: number | null }> {
+  const { rows } = await pool.query<{ user_id: number | null; authenticated_at: string | null }>(
+    "SELECT user_id, authenticated_at FROM app_auth_tokens WHERE token = $1 AND created_at > now() - interval '5 minutes'",
+    [token],
+  );
+  if (!rows[0]) return { authenticated: false, userId: null };
+  return {
+    authenticated: rows[0].authenticated_at !== null,
+    userId: rows[0].user_id,
+  };
+}
+
 // ─── Schedules ───
 
 export async function createSchedule(

@@ -6,7 +6,7 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "dev-secret-change-me-in-production-64chars!!!!",
 );
 
-const PUBLIC_PATHS = ["/login", "/api/auth/telegram", "/api/auth/logout"];
+const PUBLIC_PATHS = ["/login", "/api/auth/telegram", "/api/auth/logout", "/api/auth/init", "/api/auth/check"];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
