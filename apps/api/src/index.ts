@@ -12,6 +12,9 @@ import {
   updateLastSeen,
   saveQueryHistory,
   getQueryHistory,
+  getSchema,
+  generateSuggestions,
+  saveSuggestions,
   getLatestSuggestions,
   createInvite,
   listInvites,
@@ -226,6 +229,19 @@ app.get("/api/suggestions", requireAuth, async (_req, res) => {
     suggestions:
       suggestions ?? ["Ask any question about your data in natural language"],
   });
+});
+
+app.post("/api/suggestions/refresh", requireAuth, async (_req, res) => {
+  try {
+    const tables = await getSchema(pool);
+    const suggestions = await generateSuggestions(tables);
+    await saveSuggestions(appPool, suggestions);
+    res.json({ suggestions });
+  } catch (err) {
+    res.status(500).json({
+      error: err instanceof Error ? err.message : "Failed to refresh",
+    });
+  }
 });
 
 // ─── Invites ───

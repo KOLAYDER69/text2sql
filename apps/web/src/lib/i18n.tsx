@@ -42,6 +42,8 @@ const translations = {
   "main.ms": { ru: "мс", en: "ms" },
   "main.analysis": { ru: "Анализ", en: "Analysis" },
   "main.chart": { ru: "График", en: "Chart" },
+  "main.refresh": { ru: "Обновить идеи", en: "Refresh ideas" },
+  "main.refreshing": { ru: "Генерирую...", en: "Generating..." },
 
   // ─── Default suggestions (fallback) ───
   "suggestion.1": { ru: "Покажи топ-5 товаров по цене", en: "Show top 5 products by price" },

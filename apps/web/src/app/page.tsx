@@ -90,6 +90,7 @@ export default function Home() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [user, setUser] = useState<UserInfo | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [refreshingSuggestions, setRefreshingSuggestions] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -182,6 +183,20 @@ export default function Home() {
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/login";
+  }
+
+  async function refreshSuggestions() {
+    if (refreshingSuggestions) return;
+    setRefreshingSuggestions(true);
+    try {
+      const res = await fetch("/api/suggestions/refresh", { method: "POST" });
+      const data = await res.json();
+      if (data.suggestions) setSuggestions(data.suggestions);
+    } catch {
+      // ignore
+    } finally {
+      setRefreshingSuggestions(false);
+    }
   }
 
   const defaultSuggestions = [
@@ -337,6 +352,22 @@ export default function Home() {
                       {q}
                     </button>
                   ))}
+                </div>
+                <div className="flex justify-center mt-4">
+                  <button
+                    onClick={refreshSuggestions}
+                    disabled={refreshingSuggestions}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm text-white/40 hover:text-white/70 hover:bg-white/5 transition disabled:opacity-40"
+                  >
+                    <svg
+                      width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
+                      className={refreshingSuggestions ? "animate-spin" : ""}
+                    >
+                      <path d="M1.5 8a6.5 6.5 0 0 1 11.25-4.5M14.5 8a6.5 6.5 0 0 1-11.25 4.5" />
+                      <path d="M13.5 1v3.5H10M2.5 15v-3.5H6" />
+                    </svg>
+                    {refreshingSuggestions ? t("main.refreshing") : t("main.refresh")}
+                  </button>
                 </div>
               </div>
             </div>
