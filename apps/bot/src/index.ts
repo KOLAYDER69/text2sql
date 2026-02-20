@@ -263,7 +263,7 @@ bot.command("help", async (ctx) => {
 
 bot.command("schema", async (ctx) => {
   try {
-    const tables = await getSchema(pool);
+    const { tables } = await getSchema(pool);
     const text = tables
       .map(
         (t) =>
@@ -547,13 +547,14 @@ async function processQuery(
 
   try {
     // Step 2: Get schema & translate question to English (in parallel)
-    const [tables, translated] = await Promise.all([
+    const [schema, translated] = await Promise.all([
       getSchema(pool),
       translateQuestion(question),
     ]);
+    const { tables, relations } = schema;
 
     // Step 3: Generate SQL from English question (more reliable)
-    const sql = await generateSQL(translated.english, tables);
+    const sql = await generateSQL(translated.english, tables, relations);
 
     await ctx.api.editMessageText(chatId, msgId, "⚡ Выполняю запрос...");
 
@@ -708,7 +709,7 @@ function mdToTelegramHtml(text: string): string {
 
 async function refreshSuggestions() {
   try {
-    const tables = await getSchema(pool);
+    const { tables } = await getSchema(pool);
     const suggestions = await generateSuggestions(tables);
     await saveSuggestions(appPool, suggestions);
     console.log("Suggestions refreshed:", suggestions.length);

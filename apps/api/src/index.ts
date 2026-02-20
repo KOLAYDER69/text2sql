@@ -233,7 +233,7 @@ app.get("/api/suggestions", requireAuth, async (_req, res) => {
 
 app.post("/api/suggestions/refresh", requireAuth, async (_req, res) => {
   try {
-    const tables = await getSchema(pool);
+    const { tables } = await getSchema(pool);
     const suggestions = await generateSuggestions(tables);
     await saveSuggestions(appPool, suggestions);
     res.json({ suggestions });

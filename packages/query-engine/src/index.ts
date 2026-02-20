@@ -44,13 +44,14 @@ export async function query(
   question: string,
 ): Promise<QueryResponse> {
   // 1. Get schema + translate question to English (in parallel)
-  const [tables, translated] = await Promise.all([
+  const [schema, translated] = await Promise.all([
     getSchema(pool),
     translateQuestion(question),
   ]);
+  const { tables, relations } = schema;
 
   // 2. Generate SQL from English question (more reliable)
-  const sql = await generateSQL(translated.english, tables);
+  const sql = await generateSQL(translated.english, tables, relations);
 
   // 3. Validate
   const validation = validateSQL(sql);

@@ -11,10 +11,19 @@ export type ColumnInfo = {
 export type TableSchema = {
   name: string;
   columns: ColumnInfo[];
+  rowCount?: number;
+};
+
+export type InferredRelation = {
+  fromTable: string;
+  fromColumn: string;
+  toTable: string;
+  toColumn: string;
 };
 
 export type SchemaInfo = {
   tables: TableSchema[];
+  relations: InferredRelation[];
   cachedAt: number;
 };
 

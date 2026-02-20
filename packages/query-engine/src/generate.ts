@@ -1,15 +1,16 @@
 import { generateText } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
-import type { TableSchema } from "./types";
+import type { TableSchema, InferredRelation } from "./types";
 import { buildSystemPrompt } from "./prompt";
 
 export async function generateSQL(
   question: string,
   tables: TableSchema[],
+  relations: InferredRelation[] = [],
 ): Promise<string> {
   const { text } = await generateText({
     model: anthropic("claude-sonnet-4-6"),
-    system: buildSystemPrompt(tables),
+    system: buildSystemPrompt(tables, relations),
     prompt: question,
     maxTokens: 1024,
     temperature: 0,

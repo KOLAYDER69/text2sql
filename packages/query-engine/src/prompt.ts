@@ -1,29 +1,41 @@
-import type { TableSchema } from "./types";
+import type { TableSchema, InferredRelation } from "./types";
 
 function buildSchemaText(tables: TableSchema[]): string {
   return tables
     .map((t) => {
+      const rowInfo =
+        t.rowCount != null && t.rowCount > 0 ? ` (~${t.rowCount.toLocaleString("en-US")} rows)` : "";
       const cols = t.columns
-        .map(
-          (c) => {
-            // Show actual enum type name instead of "USER-DEFINED"
-            const typeName =
-              c.data_type === "USER-DEFINED" ? c.udt_name : c.data_type;
-            let line = `    ${c.column_name} ${typeName}${c.is_nullable === "NO" ? " NOT NULL" : ""}${c.column_default ? ` DEFAULT ${c.column_default}` : ""}`;
-            if (c.enum_values && c.enum_values.length > 0) {
-              line += ` -- enum values: ${c.enum_values.map((v) => `'${v}'`).join(", ")}`;
-            }
-            return line;
-          },
-        )
+        .map((c) => {
+          // Show actual enum type name instead of "USER-DEFINED"
+          const typeName =
+            c.data_type === "USER-DEFINED" ? c.udt_name : c.data_type;
+          let line = `    ${c.column_name} ${typeName}${c.is_nullable === "NO" ? " NOT NULL" : ""}${c.column_default ? ` DEFAULT ${c.column_default}` : ""}`;
+          if (c.enum_values && c.enum_values.length > 0) {
+            line += ` -- enum values: ${c.enum_values.map((v) => `'${v}'`).join(", ")}`;
+          }
+          return line;
+        })
         .join("\n");
-      return `  ${t.name}:\n${cols}`;
+      return `  ${t.name}${rowInfo}:\n${cols}`;
     })
     .join("\n\n");
 }
 
-export function buildSystemPrompt(tables: TableSchema[]): string {
+function buildRelationsText(relations: InferredRelation[]): string {
+  if (relations.length === 0) return "";
+  const lines = relations.map(
+    (r) => `  ${r.fromTable}.${r.fromColumn} → ${r.toTable}.${r.toColumn}`,
+  );
+  return `\nRELATIONSHIPS (inferred foreign keys — use for JOINs):\n${lines.join("\n")}`;
+}
+
+export function buildSystemPrompt(
+  tables: TableSchema[],
+  relations: InferredRelation[] = [],
+): string {
   const schemaText = buildSchemaText(tables);
+  const relationsText = buildRelationsText(relations);
   const today = new Date().toISOString().slice(0, 10);
 
   return `You are an expert SQL analyst for a PostgreSQL database. Your job is to convert natural language questions into the best possible SQL query to retrieve relevant data.
@@ -33,6 +45,7 @@ Use this date as reference for all relative time expressions ("this month", "las
 
 DATABASE SCHEMA:
 ${schemaText}
+${relationsText}
 
 RULES:
 1. Output ONLY the SQL query — no explanations, no markdown, no code blocks.
@@ -43,22 +56,38 @@ RULES:
 6. CRITICAL: ONLY use tables and columns that exist in the schema above. NEVER invent or guess table/column names. If the question asks about data that doesn't exist in the schema, respond with \`-- UNSUPPORTED: brief reason\`.
 7. For aggregations, always include meaningful aliases.
 8. For columns with allowed values listed (-- enum values: ...), ONLY use those exact values. Never guess or invent values.
-9. If the question maps to an existing concept in the schema under a different name (e.g. "deposits" could mean orders, "commissions" could mean order totals), use the closest matching table. If no reasonable mapping exists, respond with \`-- UNSUPPORTED\`.
+9. If the question maps to an existing concept in the schema under a different name (e.g. "deposits" could mean orders, "commissions" could mean fee column), use the closest matching table/column. If no reasonable mapping exists, respond with \`-- UNSUPPORTED\`.
+10. When a question asks about users/people by name, ALWAYS JOIN with the users table to show human-readable identifiers (username, email, first_name). Use COALESCE(u.username, u.email, u.first_name) for display names.
+11. Use the RELATIONSHIPS section to determine correct JOINs. If a table has user_id, join it with users.id. If it has team_id, join with teams.id, etc.
+12. For "top N" or ranking questions, always include supporting context columns (counts, date ranges, totals) so results are informative — not just bare numbers.
 
 ANALYTICAL QUESTIONS:
 - For "why" or comparison questions, generate SQL that retrieves the comparison data needed to reason about it.
 - For broad analytical questions, use CTEs to gather multiple perspectives in one query.
 - Think step-by-step about what data would help answer the question, then write the SQL to get it.
-- If the question is about data that has no representation in the schema at all, respond with \`-- UNSUPPORTED: reason\` explaining what data is missing (e.g. "No transactions or deposits table exists. Available tables: orders, products, customers").`;
+- If the question is about data that has no representation in the schema at all, respond with \`-- UNSUPPORTED: reason\` explaining what data is missing.
+
+EXAMPLE — multi-table aggregation with JOIN:
+Question: "Show top 10 users by total fees paid"
+SQL:
+SELECT
+  u.id,
+  COALESCE(u.username, u.email, u.first_name || ' ' || u.last_name) AS user_name,
+  u.email,
+  SUM(o.fee) AS total_fees,
+  COUNT(*) AS operations_count,
+  MIN(o.created_at)::date AS first_operation,
+  MAX(o.created_at)::date AS last_operation
+FROM operations o
+JOIN users u ON u.id = o.user_id
+WHERE o.status = 'success' AND o.fee > 0
+GROUP BY u.id, u.username, u.email, u.first_name, u.last_name
+ORDER BY total_fees DESC
+LIMIT 10`;
 }
 
 export function buildAnalysisPrompt(tables: TableSchema[]): string {
-  const schemaText = buildSchemaText(tables);
-
   return `You are an expert data analyst. You are given a user's question, the SQL query that was executed, and the results. Provide a clear, insightful analysis in the same language as the question.
-
-DATABASE SCHEMA:
-${schemaText}
 
 RULES:
 1. Answer the user's question directly based on the data.
