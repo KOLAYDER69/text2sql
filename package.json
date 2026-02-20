@@ -1,0 +1,8 @@
+{
+  "name": "querybot",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ]
+}
