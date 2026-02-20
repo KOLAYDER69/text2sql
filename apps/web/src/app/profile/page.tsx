@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useI18n, LangSwitcher } from "@/lib/i18n";
 
 type UserInfo = {
   id: number;
@@ -22,6 +23,7 @@ type HistoryItem = {
 };
 
 export default function ProfilePage() {
+  const { t } = useI18n();
   const [user, setUser] = useState<UserInfo | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,7 +52,6 @@ export default function ProfilePage() {
     window.location.href = "/login";
   }
 
-  // Stats
   const totalQueries = history.length;
   const successQueries = history.filter((h) => !h.error).length;
   const errorQueries = history.filter((h) => h.error).length;
@@ -68,7 +69,6 @@ export default function ProfilePage() {
     .filter((h) => !h.error)
     .reduce((sum, h) => sum + (h.row_count ?? 0), 0);
 
-  // Activity: queries per day (last 7 days)
   const last7 = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - (6 - i));
@@ -92,36 +92,39 @@ export default function ProfilePage() {
             QueryBot
           </Link>
         </div>
-        <nav className="px-3 space-y-1">
+        <nav className="px-3 space-y-1 flex-1">
           <Link
             href="/"
             className="block px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition"
           >
-            Запросы
+            {t("nav.queries")}
           </Link>
           <Link
             href="/invites"
             className="block px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition"
           >
-            Инвайты
+            {t("nav.invites")}
           </Link>
           <Link
             href="/profile"
             className="block px-3 py-2 rounded-lg text-sm text-white bg-white/5 font-medium"
           >
-            Профиль
+            {t("nav.profile")}
           </Link>
         </nav>
+        <div className="p-3 border-t border-white/10">
+          <LangSwitcher />
+        </div>
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
         {/* Mobile header */}
         <header className="border-b border-white/10 px-4 py-3 flex items-center justify-between shrink-0 lg:hidden">
           <Link href="/" className="text-white/40 hover:text-white transition text-sm">
-            &larr; Назад
+            &larr; {t("nav.back")}
           </Link>
-          <h1 className="text-lg font-semibold">Профиль</h1>
-          <div className="w-12" />
+          <h1 className="text-lg font-semibold">{t("profile.title")}</h1>
+          <LangSwitcher />
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 lg:p-6">
@@ -152,7 +155,7 @@ export default function ProfilePage() {
                     onClick={handleLogout}
                     className="px-4 py-2 rounded-xl border border-red-500/20 text-red-400 hover:bg-red-500/10 transition text-sm"
                   >
-                    Выйти
+                    {t("nav.logout")}
                   </button>
                 </div>
               </div>
@@ -160,28 +163,28 @@ export default function ProfilePage() {
               {/* Stats grid */}
               <div>
                 <h3 className="text-sm text-white/40 uppercase tracking-wider font-medium mb-3">
-                  Статистика
+                  {t("profile.stats")}
                 </h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                   <div className="bg-white/[0.03] border border-white/10 rounded-xl p-4">
                     <p className="text-2xl font-bold">{totalQueries}</p>
-                    <p className="text-xs text-white/40 mt-1">Запросов</p>
+                    <p className="text-xs text-white/40 mt-1">{t("profile.totalQueries")}</p>
                   </div>
                   <div className="bg-white/[0.03] border border-white/10 rounded-xl p-4">
                     <p className="text-2xl font-bold text-emerald-400">{successQueries}</p>
-                    <p className="text-xs text-white/40 mt-1">Успешных</p>
+                    <p className="text-xs text-white/40 mt-1">{t("profile.successful")}</p>
                   </div>
                   <div className="bg-white/[0.03] border border-white/10 rounded-xl p-4">
                     <p className="text-2xl font-bold text-red-400">{errorQueries}</p>
-                    <p className="text-xs text-white/40 mt-1">Ошибок</p>
+                    <p className="text-xs text-white/40 mt-1">{t("profile.errors")}</p>
                   </div>
                   <div className="bg-white/[0.03] border border-white/10 rounded-xl p-4">
-                    <p className="text-2xl font-bold">{avgTime}<span className="text-sm text-white/30">мс</span></p>
-                    <p className="text-xs text-white/40 mt-1">Среднее время</p>
+                    <p className="text-2xl font-bold">{avgTime}<span className="text-sm text-white/30">{t("main.ms")}</span></p>
+                    <p className="text-xs text-white/40 mt-1">{t("profile.avgTime")}</p>
                   </div>
                   <div className="bg-white/[0.03] border border-white/10 rounded-xl p-4">
                     <p className="text-2xl font-bold">{totalRows.toLocaleString()}</p>
-                    <p className="text-xs text-white/40 mt-1">Строк всего</p>
+                    <p className="text-xs text-white/40 mt-1">{t("profile.totalRows")}</p>
                   </div>
                   <div className="bg-white/[0.03] border border-white/10 rounded-xl p-4">
                     <div className="flex items-baseline gap-2">
@@ -189,7 +192,7 @@ export default function ProfilePage() {
                       <span className="text-white/20 text-xs">/</span>
                       <p className="text-lg font-bold text-blue-400">{tgQueries}</p>
                     </div>
-                    <p className="text-xs text-white/40 mt-1">Web / Telegram</p>
+                    <p className="text-xs text-white/40 mt-1">{t("profile.webTelegram")}</p>
                   </div>
                 </div>
               </div>
@@ -197,7 +200,7 @@ export default function ProfilePage() {
               {/* Activity chart */}
               <div className="bg-white/[0.03] border border-white/10 rounded-xl p-5">
                 <h3 className="text-sm text-white/40 uppercase tracking-wider font-medium mb-4">
-                  Активность (7 дней)
+                  {t("profile.activity")}
                 </h3>
                 <div className="flex items-end gap-1.5 h-24">
                   {last7.map((day, i) => (
@@ -224,15 +227,15 @@ export default function ProfilePage() {
                   href="/"
                   className="flex-1 bg-white/[0.03] border border-white/10 rounded-xl p-4 hover:bg-white/[0.06] transition text-center"
                 >
-                  <p className="text-sm font-medium">Запросы</p>
-                  <p className="text-xs text-white/30 mt-1">Задать вопрос</p>
+                  <p className="text-sm font-medium">{t("nav.queries")}</p>
+                  <p className="text-xs text-white/30 mt-1">{t("profile.askQuestion")}</p>
                 </Link>
                 <Link
                   href="/invites"
                   className="flex-1 bg-white/[0.03] border border-white/10 rounded-xl p-4 hover:bg-white/[0.06] transition text-center"
                 >
-                  <p className="text-sm font-medium">Инвайты</p>
-                  <p className="text-xs text-white/30 mt-1">Управление доступом</p>
+                  <p className="text-sm font-medium">{t("nav.invites")}</p>
+                  <p className="text-xs text-white/30 mt-1">{t("profile.manageAccess")}</p>
                 </Link>
               </div>
             </div>

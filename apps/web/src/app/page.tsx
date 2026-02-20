@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
+import { useI18n, LangSwitcher } from "@/lib/i18n";
 
 type QueryResult = {
   question: string;
@@ -30,6 +31,7 @@ type UserInfo = {
 };
 
 export default function Home() {
+  const { t } = useI18n();
   const [result, setResult] = useState<QueryResult | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -95,7 +97,7 @@ export default function Home() {
         fields: [],
         rowCount: 0,
         executionMs: 0,
-        error: "Ошибка соединения с сервером",
+        error: t("main.connectionError"),
       });
     } finally {
       setLoading(false);
@@ -123,6 +125,13 @@ export default function Home() {
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/login";
   }
+
+  const defaultSuggestions = [
+    t("suggestion.1"),
+    t("suggestion.2"),
+    t("suggestion.3"),
+    t("suggestion.4"),
+  ];
 
   const showEmpty = !result && !loading;
 
@@ -153,17 +162,17 @@ export default function Home() {
             className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border border-white/10 hover:bg-white/5 transition text-sm font-medium"
           >
             <span className="text-lg leading-none">+</span>
-            Новый запрос
+            {t("nav.newQuery")}
           </button>
         </div>
 
         {/* History list */}
         <div className="flex-1 overflow-y-auto px-2">
           <p className="text-xs text-white/30 px-2 py-2 uppercase tracking-wider">
-            История
+            {t("nav.history")}
           </p>
           {history.length === 0 ? (
-            <p className="text-white/20 text-xs px-2">Пока нет запросов</p>
+            <p className="text-white/20 text-xs px-2">{t("main.noHistory")}</p>
           ) : (
             history.map((item) => (
               <button
@@ -176,8 +185,8 @@ export default function Home() {
                 </p>
                 <p className="text-[11px] text-white/25 mt-0.5">
                   {item.error
-                    ? "ошибка"
-                    : `${item.row_count} строк`}
+                    ? t("main.error")
+                    : `${item.row_count} ${t("main.rows")}`}
                   {" · "}
                   {new Date(item.created_at).toLocaleDateString("ru")}
                 </p>
@@ -195,7 +204,7 @@ export default function Home() {
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
               <path d="M8 3v10M3 8h10" />
             </svg>
-            Инвайты
+            {t("nav.invites")}
           </Link>
           <Link
             href="/profile"
@@ -205,8 +214,11 @@ export default function Home() {
               <circle cx="8" cy="5" r="3" />
               <path d="M2 14c0-3 2.5-5 6-5s6 2 6 5" />
             </svg>
-            Профиль
+            {t("nav.profile")}
           </Link>
+          <div className="px-3 py-2">
+            <LangSwitcher />
+          </div>
         </div>
       </aside>
 
@@ -237,7 +249,7 @@ export default function Home() {
                 onClick={handleLogout}
                 className="text-sm text-white/30 hover:text-white transition"
               >
-                Выйти
+                {t("nav.logout")}
               </button>
             </div>
           )}
@@ -250,21 +262,13 @@ export default function Home() {
             <div className="flex items-center justify-center h-full p-4">
               <div className="max-w-2xl w-full">
                 <h2 className="text-2xl font-bold text-center mb-2">
-                  Задай вопрос о данных
+                  {t("main.title")}
                 </h2>
                 <p className="text-white/40 text-center mb-8 text-sm">
-                  Введи вопрос на естественном языке — получи SQL и результат
+                  {t("main.subtitle")}
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {(suggestions.length > 0
-                    ? suggestions
-                    : [
-                        "Покажи топ-5 товаров по цене",
-                        "Сколько заказов в каждом статусе?",
-                        "Какой средний чек по городам?",
-                        "Show all customers from Moscow",
-                      ]
-                  ).map((q) => (
+                  {(suggestions.length > 0 ? suggestions : defaultSuggestions).map((q) => (
                     <button
                       key={q}
                       onClick={() => runQuery(q)}
@@ -283,7 +287,7 @@ export default function Home() {
             <div className="flex items-center justify-center h-full">
               <div className="flex items-center gap-3 text-white/50">
                 <div className="animate-spin h-5 w-5 border-2 border-white/20 border-t-white rounded-full" />
-                Выполняю запрос...
+                {t("main.running")}
               </div>
             </div>
           )}
@@ -291,19 +295,16 @@ export default function Home() {
           {/* Query result */}
           {result && !loading && (
             <div className="p-4 lg:p-6 max-w-5xl mx-auto space-y-4">
-              {/* Question */}
               <div className="text-white/50 text-sm">
                 {result.question}
               </div>
 
-              {/* Error */}
               {result.error && (
                 <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-red-400 text-sm">
                   {result.error}
                 </div>
               )}
 
-              {/* SQL */}
               {result.sql && (
                 <div className="bg-white/[0.03] border border-white/10 rounded-xl overflow-hidden">
                   <div className="px-4 py-2 border-b border-white/10 flex items-center justify-between">
@@ -315,12 +316,11 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Results table */}
               {result.rows && result.rows.length > 0 && result.fields && (
                 <div className="bg-white/[0.03] border border-white/10 rounded-xl overflow-hidden">
                   <div className="px-4 py-2 border-b border-white/10">
                     <span className="text-xs text-white/40">
-                      {result.rowCount} строк · {result.executionMs}мс
+                      {result.rowCount} {t("main.rows")} · {result.executionMs}{t("main.ms")}
                     </span>
                   </div>
                   <div className="overflow-x-auto">
@@ -362,10 +362,9 @@ export default function Home() {
                 </div>
               )}
 
-              {/* No results */}
               {!result.error && result.rows && result.rows.length === 0 && (
                 <div className="text-center text-white/30 py-8 text-sm">
-                  Нет результатов
+                  {t("main.noResults")}
                 </div>
               )}
             </div>
@@ -380,7 +379,7 @@ export default function Home() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Задай вопрос о данных..."
+              placeholder={t("main.placeholder")}
               className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25 transition text-sm"
               disabled={loading}
             />
@@ -389,7 +388,7 @@ export default function Home() {
               disabled={loading || !input.trim()}
               className="bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed px-5 py-3 rounded-xl font-medium transition text-sm"
             >
-              Отправить
+              {t("main.send")}
             </button>
           </div>
         </form>
