@@ -1,0 +1,21 @@
+{
+  "name": "@querybot/api",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "@querybot/engine": "*",
+    "cookie-parser": "^1.4.7",
+    "express": "^5.1.0",
+    "jose": "^6.1.3"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.8",
+    "@types/express": "^5.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,15 @@
+[Unit]
+Description=QueryBot API Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/querybot/apps/api
+ExecStart=/usr/bin/npx tsx src/index.ts
+EnvironmentFile=/opt/querybot/apps/api/.env
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

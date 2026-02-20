@@ -463,6 +463,64 @@ bot.hears(/^\/cancel_(\d+)$/, async (ctx) => {
   await ctx.reply(`Schedule #${scheduleId} cancelled.`);
 });
 
+// ─── Schedule buttons — question store by hash ───
+
+const questionStore = new Map<string, string>();
+
+function storeQuestion(question: string): string {
+  const hash = crypto.createHash("md5").update(question).digest("hex").slice(0, 8);
+  questionStore.set(hash, question);
+  // Auto-expire after 1 hour
+  setTimeout(() => questionStore.delete(hash), 60 * 60 * 1000);
+  return hash;
+}
+
+// Callback handler for schedule buttons
+bot.callbackQuery(/^sched:(daily|weekly):(.+)$/, async (ctx) => {
+  const interval = ctx.match[1];
+  const hash = ctx.match[2];
+  const question = questionStore.get(hash);
+
+  if (!question) {
+    await ctx.answerCallbackQuery({ text: "Запрос устарел. Отправьте вопрос заново." });
+    return;
+  }
+
+  const user = getUser(ctx);
+  const cronExpr = CRON_PRESETS[interval];
+
+  // We already know the query works — just need the SQL
+  const result = await query(pool, question);
+  if (result.error) {
+    await ctx.answerCallbackQuery({ text: "Ошибка запроса" });
+    return;
+  }
+
+  const schedule = await createSchedule(appPool, {
+    user_id: user.id,
+    question,
+    sql: result.sql,
+    cron_expr: cronExpr,
+    label: `${interval}: ${question}`,
+  });
+
+  registerJob(bot, appPool, pool, schedule.id, cronExpr, {
+    telegramId: String(user.telegram_id),
+    question,
+  });
+
+  const intervalLabel = interval === "daily" ? "Ежедневно" : "Еженедельно";
+  await ctx.answerCallbackQuery({ text: `Расписание создано: ${intervalLabel}` });
+  await ctx.reply(
+    `✅ Расписание создано!\n\n` +
+      `<b>${escapeHtml(question)}</b>\n` +
+      `Интервал: ${intervalLabel}\n` +
+      `ID: ${schedule.id}\n\n` +
+      `Отмена: /cancel_${schedule.id}`,
+    { parse_mode: "HTML" },
+  );
+});
+
 // ─── Handle text messages — run query pipeline ───
 
 bot.on("message:text", async (ctx) => {
@@ -476,7 +534,7 @@ async function processQuery(
 ): Promise<void> {
   const user = getUser(ctx);
 
-  await ctx.reply("Running query...");
+  await ctx.reply("⏳ Выполняю запрос...");
 
   try {
     const result = await query(pool, question);
@@ -494,12 +552,16 @@ async function processQuery(
 
     if (result.error) {
       await ctx.reply(
-        `${result.error}\n\n<b>SQL:</b>\n<pre>${escapeHtml(result.sql)}</pre>`,
+        `❌ ${result.error}\n\n🔍 SQL:\n<pre>${escapeHtml(result.sql)}</pre>`,
         { parse_mode: "HTML" },
       );
       return;
     }
 
+    // SQL block
+    const sqlBlock = `🔍 SQL:\n<pre>${escapeHtml(result.sql)}</pre>`;
+
+    // Data block
     const formatted = formatTelegram({
       sql: result.sql,
       rows: result.rows,
@@ -508,21 +570,30 @@ async function processQuery(
       executionMs: result.executionMs,
     });
 
-    const message = `<b>SQL:</b>\n<pre>${escapeHtml(result.sql)}</pre>\n\n<b>Result:</b>\n${formatted}`;
+    // Schedule buttons
+    const hash = storeQuestion(question);
+    const scheduleKeyboard = new InlineKeyboard()
+      .text("📋 Ежедневно", `sched:daily:${hash}`)
+      .text("📋 Еженедельно", `sched:weekly:${hash}`);
+
+    const message = `${sqlBlock}\n\n${formatted}`;
 
     // Telegram messages have 4096 char limit
     if (message.length > 4096) {
-      await ctx.reply(
-        `<b>SQL:</b>\n<pre>${escapeHtml(result.sql)}</pre>`,
-        { parse_mode: "HTML" },
-      );
-      await ctx.reply(formatted, { parse_mode: "HTML" });
+      await ctx.reply(sqlBlock, { parse_mode: "HTML" });
+      await ctx.reply(formatted, {
+        parse_mode: "HTML",
+        reply_markup: scheduleKeyboard,
+      });
     } else {
-      await ctx.reply(message, { parse_mode: "HTML" });
+      await ctx.reply(message, {
+        parse_mode: "HTML",
+        reply_markup: scheduleKeyboard,
+      });
     }
   } catch (err) {
     await ctx.reply(
-      "Error: " + (err instanceof Error ? err.message : "Unknown"),
+      "❌ Ошибка: " + (err instanceof Error ? err.message : "Unknown"),
     );
   }
 }
@@ -553,6 +624,18 @@ async function startWithRetry(maxRetries = 5) {
       await bot.start({
         onStart: () => {
           console.log("QueryBot started (long polling)");
+
+          // Register bot commands menu
+          bot.api.setMyCommands([
+            { command: "start", description: "Начать работу" },
+            { command: "help", description: "Помощь" },
+            { command: "schema", description: "Схема базы данных" },
+            { command: "history", description: "История запросов" },
+            { command: "generate", description: "Создать инвайт" },
+            { command: "schedule", description: "Запланировать запрос" },
+            { command: "schedules", description: "Мои расписания" },
+          ]);
+
           // Generate suggestions on startup + refresh every hour
           refreshSuggestions();
           new Cron("0 * * * *", () => refreshSuggestions());

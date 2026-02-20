@@ -3,7 +3,7 @@ import type { QueryResult } from "./types";
 /** Format as plain-text table for Telegram (HTML parse mode) */
 export function formatTelegram(result: QueryResult): string {
   if (result.rows.length === 0) {
-    return "<i>Нет результатов</i>";
+    return "📊 <b>Результат</b>\n\n<i>Нет результатов</i>";
   }
 
   const { fields, rows } = result;
@@ -21,7 +21,7 @@ export function formatTelegram(result: QueryResult): string {
 
   const header = fields
     .map((f, i) => f.slice(0, cappedWidths[i]).padEnd(cappedWidths[i]))
-    .join(" | ");
+    .join(" │ ");
 
   const separator = cappedWidths.map((w) => "─".repeat(w)).join("─┼─");
 
@@ -34,17 +34,18 @@ export function formatTelegram(result: QueryResult): string {
             .slice(0, cappedWidths[i])
             .padEnd(cappedWidths[i]),
         )
-        .join(" | "),
+        .join(" │ "),
     )
     .join("\n");
 
-  let text = `<pre>${header}\n${separator}\n${body}</pre>`;
+  const displayCount = Math.min(rows.length, 50);
+  let text = `📊 <b>Результат</b>\n\n`;
+  text += `📋 Данные (${displayCount} строк · ${result.executionMs}мс):\n`;
+  text += `<pre>${header}\n${separator}\n${body}</pre>`;
 
   if (rows.length > 50) {
     text += `\n<i>... показано 50 из ${rows.length} строк</i>`;
   }
-
-  text += `\n\n<i>${result.rowCount} строк · ${result.executionMs}мс</i>`;
 
   return text;
 }
