@@ -97,7 +97,7 @@ export default function LoginPage() {
     function drawPlanet() {
       const cx = w * 0.5;
       const cy = h * 0.45;
-      const r = Math.min(w, h) * 0.18;
+      const r = Math.min(w, h) * 0.36;
 
       // Glow
       const glow = ctx!.createRadialGradient(cx, cy, r * 0.8, cx, cy, r * 1.6);
