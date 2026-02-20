@@ -32,4 +32,5 @@ export type QueryResponse = {
   fields: string[];
   executionMs: number;
   error?: string;
+  analysis?: string;
 };

@@ -3,6 +3,7 @@ import { getSchema, clearSchemaCache } from "./introspect";
 import { generateSQL } from "./generate";
 import { validateSQL } from "./validate";
 import { executeSQL } from "./execute";
+import { analyzeResults } from "./analyze";
 import { formatTelegram, formatHTML } from "./format";
 import type { QueryResponse } from "./types";
 
@@ -10,6 +11,7 @@ export { getSchema, clearSchemaCache } from "./introspect";
 export { generateSQL } from "./generate";
 export { validateSQL } from "./validate";
 export { executeSQL } from "./execute";
+export { analyzeResults } from "./analyze";
 export { formatTelegram, formatHTML } from "./format";
 export { buildSystemPrompt } from "./prompt";
 export { generateSuggestions } from "./suggestions";
@@ -32,7 +34,7 @@ export function createAppPool(appDatabaseUrl: string): pg.Pool {
   });
 }
 
-/** Full pipeline: question → SQL → results */
+/** Full pipeline: question → SQL → results → analysis */
 export async function query(
   pool: pg.Pool,
   question: string,
@@ -60,6 +62,22 @@ export async function query(
   // 4. Execute
   try {
     const result = await executeSQL(pool, sql);
+
+    // 5. Analyze results with AI
+    let analysis: string | undefined;
+    try {
+      analysis = await analyzeResults(
+        question,
+        result.sql,
+        result.rows,
+        result.fields,
+        result.rowCount,
+        tables,
+      );
+    } catch {
+      // Analysis is non-critical — skip on error
+    }
+
     return {
       question,
       sql: result.sql,
@@ -67,6 +85,7 @@ export async function query(
       rowCount: result.rowCount,
       fields: result.fields,
       executionMs: result.executionMs,
+      analysis,
     };
   } catch (err) {
     return {

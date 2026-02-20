@@ -12,6 +12,7 @@ type QueryResult = {
   rowCount: number;
   executionMs: number;
   error?: string;
+  analysis?: string;
 };
 
 type HistoryItem = {
@@ -359,6 +360,13 @@ export default function Home() {
                       </tbody>
                     </table>
                   </div>
+                </div>
+              )}
+
+              {result.analysis && (
+                <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-5">
+                  <p className="text-xs text-blue-400/60 uppercase tracking-wider font-medium mb-2">{t("main.analysis")}</p>
+                  <p className="text-sm text-white/80 whitespace-pre-line leading-relaxed">{result.analysis}</p>
                 </div>
               )}
 

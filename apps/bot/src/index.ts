@@ -563,21 +563,39 @@ async function processQuery(
       executionMs: result.executionMs,
     });
 
+    // Analysis block
+    const analysisBlock = result.analysis
+      ? `\n\n💡 <b>Анализ:</b>\n${escapeHtml(result.analysis)}`
+      : "";
+
     // Schedule buttons
     const hash = storeQuestion(question);
     const scheduleKeyboard = new InlineKeyboard()
       .text("📋 Ежедневно", `sched:daily:${hash}`)
       .text("📋 Еженедельно", `sched:weekly:${hash}`);
 
-    const message = `${sqlBlock}\n\n${formatted}`;
+    const message = `${sqlBlock}\n\n${formatted}${analysisBlock}`;
 
     // Telegram messages have 4096 char limit
     if (message.length > 4096) {
       await ctx.reply(sqlBlock, { parse_mode: "HTML" });
-      await ctx.reply(formatted, {
-        parse_mode: "HTML",
-        reply_markup: scheduleKeyboard,
-      });
+      const dataAndAnalysis = `${formatted}${analysisBlock}`;
+      if (dataAndAnalysis.length > 4096) {
+        await ctx.reply(formatted, { parse_mode: "HTML" });
+        if (analysisBlock) {
+          await ctx.reply(analysisBlock.trim(), {
+            parse_mode: "HTML",
+            reply_markup: scheduleKeyboard,
+          });
+        } else {
+          await ctx.reply("—", { reply_markup: scheduleKeyboard });
+        }
+      } else {
+        await ctx.reply(dataAndAnalysis, {
+          parse_mode: "HTML",
+          reply_markup: scheduleKeyboard,
+        });
+      }
     } else {
       await ctx.reply(message, {
         parse_mode: "HTML",
