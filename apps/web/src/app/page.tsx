@@ -6,22 +6,40 @@ import { useI18n, LangSwitcher } from "@/lib/i18n";
 import { QueryChart } from "./chart";
 
 function formatAnalysis(text: string): string {
-  let out = text
+  // 1. Preserve safe HTML tags from AI (<b>, <i>, <code>) with placeholders
+  const tags: string[] = [];
+  let out = text.replace(/<\/?(b|i|code)>/gi, (match) => {
+    tags.push(match);
+    return `\x00${tags.length - 1}\x00`;
+  });
+
+  // 2. Escape remaining HTML
+  out = out
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
-  // Headers → bold
+
+  // 3. Restore safe tags, mapping to styled elements
+  out = out.replace(/\x00(\d+)\x00/g, (_, idx) => {
+    const tag = tags[Number(idx)];
+    return tag
+      .replace(/<b>/gi, '<strong class="text-white">')
+      .replace(/<\/b>/gi, "</strong>")
+      .replace(/<i>/gi, "<em>")
+      .replace(/<\/i>/gi, "</em>")
+      .replace(/<code>/gi, '<code class="bg-white/10 px-1 rounded text-blue-300">')
+      .replace(/<\/code>/gi, "</code>");
+  });
+
+  // 4. Markdown fallbacks (in case AI uses markdown instead of HTML)
   out = out.replace(/^#{1,3}\s+(.+)$/gm, '<strong class="text-white block mt-3 mb-1">$1</strong>');
-  // Bold
   out = out.replace(/\*\*(.+?)\*\*/g, '<strong class="text-white">$1</strong>');
   out = out.replace(/__(.+?)__/g, '<strong class="text-white">$1</strong>');
-  // Italic
   out = out.replace(/(?<!\w)\*(.+?)\*(?!\w)/g, "<em>$1</em>");
-  // Inline code
   out = out.replace(/`([^`]+)`/g, '<code class="bg-white/10 px-1 rounded text-blue-300">$1</code>');
-  // Bullet points
-  out = out.replace(/^[-*]\s+/gm, "• ");
-  // Paragraphs
+
+  // 5. Bullet points and paragraphs
+  out = out.replace(/^[-—]\s+/gm, "• ");
   out = out.replace(/\n\n/g, '</p><p class="mt-2">');
   out = `<p>${out}</p>`;
   return out;
@@ -358,18 +376,15 @@ export default function Home() {
                 </div>
               )}
 
-              {result.sql && (
-                <div className="bg-white/[0.03] border border-white/10 rounded-xl overflow-hidden">
-                  <div className="px-4 py-2 border-b border-white/10 flex items-center justify-between">
-                    <span className="text-xs text-white/40 uppercase tracking-wider font-medium">SQL</span>
-                  </div>
-                  <pre className="p-4 text-sm font-mono text-emerald-400 overflow-x-auto whitespace-pre-wrap">
-                    {result.sql}
-                  </pre>
+              {result.analysis && (
+                <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-5">
+                  <p className="text-xs text-blue-400/60 uppercase tracking-wider font-medium mb-2">{t("main.analysis")}</p>
+                  <div
+                    className="text-sm text-white/80 leading-relaxed analysis-content"
+                    dangerouslySetInnerHTML={{ __html: formatAnalysis(result.analysis) }}
+                  />
                 </div>
               )}
-
-              {result.chart && <QueryChart config={result.chart} />}
 
               {result.rows && result.rows.length > 0 && result.fields && (
                 <div className="bg-white/[0.03] border border-white/10 rounded-xl overflow-hidden">
@@ -417,13 +432,16 @@ export default function Home() {
                 </div>
               )}
 
-              {result.analysis && (
-                <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-5">
-                  <p className="text-xs text-blue-400/60 uppercase tracking-wider font-medium mb-2">{t("main.analysis")}</p>
-                  <div
-                    className="text-sm text-white/80 leading-relaxed analysis-content"
-                    dangerouslySetInnerHTML={{ __html: formatAnalysis(result.analysis) }}
-                  />
+              {result.chart && <QueryChart config={result.chart} />}
+
+              {result.sql && (
+                <div className="bg-white/[0.03] border border-white/10 rounded-xl overflow-hidden">
+                  <div className="px-4 py-2 border-b border-white/10 flex items-center justify-between">
+                    <span className="text-xs text-white/40 uppercase tracking-wider font-medium">SQL</span>
+                  </div>
+                  <pre className="p-4 text-sm font-mono text-emerald-400 overflow-x-auto whitespace-pre-wrap">
+                    {result.sql}
+                  </pre>
                 </div>
               )}
 
