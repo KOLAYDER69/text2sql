@@ -584,7 +584,8 @@ async function processQuery(
     // Step 7: Send beautiful response
     // Analysis first (main answer)
     if (analysis) {
-      await sendSafe(ctx, `💡 <b>Ответ:</b>\n\n${escapeHtml(analysis)}`);
+      const cleanAnalysis = mdToTelegramHtml(analysis);
+      await sendSafe(ctx, `💡 <b>Ответ:</b>\n\n${cleanAnalysis}`);
     }
 
     // Data table
@@ -648,6 +649,34 @@ async function sendSafe(
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Convert markdown-style text to Telegram HTML, handling mixed input */
+function mdToTelegramHtml(text: string): string {
+  let out = text;
+  // Escape HTML entities first (but preserve existing HTML tags from Claude)
+  // Check if text already has HTML tags — if so, just clean up markdown remnants
+  const hasHtmlTags = /<\/?[bi]>|<\/?code>|<\/?pre>/.test(out);
+
+  if (!hasHtmlTags) {
+    // Pure markdown — escape & convert
+    out = out.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  // Remove markdown headers (## Header → bold line)
+  out = out.replace(/^#{1,3}\s+(.+)$/gm, "<b>$1</b>");
+  // Bold: **text** or __text__
+  out = out.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+  out = out.replace(/__(.+?)__/g, "<b>$1</b>");
+  // Italic: *text* or _text_ (but not inside words)
+  out = out.replace(/(?<!\w)\*(.+?)\*(?!\w)/g, "<i>$1</i>");
+  out = out.replace(/(?<!\w)_(.+?)_(?!\w)/g, "<i>$1</i>");
+  // Inline code: `text`
+  out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+  // Bullet points: - text → • text
+  out = out.replace(/^[-*]\s+/gm, "• ");
+
+  return out.trim();
 }
 
 // ─── Suggestions refresh (hourly + on startup) ───

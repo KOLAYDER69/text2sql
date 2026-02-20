@@ -4,6 +4,28 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useI18n, LangSwitcher } from "@/lib/i18n";
 
+function formatAnalysis(text: string): string {
+  let out = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  // Headers → bold
+  out = out.replace(/^#{1,3}\s+(.+)$/gm, '<strong class="text-white block mt-3 mb-1">$1</strong>');
+  // Bold
+  out = out.replace(/\*\*(.+?)\*\*/g, '<strong class="text-white">$1</strong>');
+  out = out.replace(/__(.+?)__/g, '<strong class="text-white">$1</strong>');
+  // Italic
+  out = out.replace(/(?<!\w)\*(.+?)\*(?!\w)/g, "<em>$1</em>");
+  // Inline code
+  out = out.replace(/`([^`]+)`/g, '<code class="bg-white/10 px-1 rounded text-blue-300">$1</code>');
+  // Bullet points
+  out = out.replace(/^[-*]\s+/gm, "• ");
+  // Paragraphs
+  out = out.replace(/\n\n/g, '</p><p class="mt-2">');
+  out = `<p>${out}</p>`;
+  return out;
+}
+
 type QueryResult = {
   question: string;
   sql: string;
@@ -385,7 +407,10 @@ export default function Home() {
               {result.analysis && (
                 <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-5">
                   <p className="text-xs text-blue-400/60 uppercase tracking-wider font-medium mb-2">{t("main.analysis")}</p>
-                  <p className="text-sm text-white/80 whitespace-pre-line leading-relaxed">{result.analysis}</p>
+                  <div
+                    className="text-sm text-white/80 leading-relaxed analysis-content"
+                    dangerouslySetInnerHTML={{ __html: formatAnalysis(result.analysis) }}
+                  />
                 </div>
               )}
 

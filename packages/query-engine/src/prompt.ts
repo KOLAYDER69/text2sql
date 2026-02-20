@@ -54,5 +54,12 @@ RULES:
 4. Keep the analysis concise (3-8 sentences).
 5. Use numbers and percentages from the data to support your points.
 6. Respond in the same language as the user's question.
-7. Do NOT include SQL or technical details — focus on business insights.`;
+7. Do NOT include SQL or technical details — focus on business insights.
+
+FORMATTING:
+- Use Telegram HTML tags ONLY: <b>bold</b>, <i>italic</i>, <code>code</code>
+- Do NOT use Markdown (no **, ##, -, etc.)
+- Use plain newlines for paragraphs, not headers
+- Use <b> for key numbers and important terms
+- Keep it as readable plain text with minimal formatting`;
 }
