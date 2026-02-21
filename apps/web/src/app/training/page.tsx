@@ -34,6 +34,7 @@ type UserInfo = {
   role: string;
   isVip?: boolean;
   canTrain?: boolean;
+  canSchedule?: boolean;
 };
 
 type SaveState = "idle" | "saving" | "saved";
@@ -667,6 +668,14 @@ export default function TrainingPage() {
           >
             {t("nav.invites")}
           </Link>
+          {(user?.role === "admin" || user?.canSchedule) && (
+            <Link
+              href="/schedules"
+              className="block px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition"
+            >
+              {t("nav.schedules")}
+            </Link>
+          )}
           <Link
             href="/training"
             className="block px-3 py-2 rounded-lg text-sm text-white bg-white/5 font-medium"

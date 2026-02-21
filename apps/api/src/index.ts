@@ -9,6 +9,7 @@ import {
   getSchema,
   translateQuestion,
   generateClarifications,
+  suggestQueryFix,
   createAuthToken,
   checkAuthToken,
   findUserByTelegramId,
@@ -31,6 +32,11 @@ import {
   buildDescriptionsMap,
   listInvitedUsers,
   updateUserPermissions,
+  addFavorite,
+  removeFavorite,
+  getUserFavorites,
+  createSharedQuery,
+  getSharedQuery,
 } from "@querybot/engine";
 import type { FollowUpMessage, SchemaDescriptions } from "@querybot/engine";
 import {
@@ -345,6 +351,44 @@ app.post("/api/query/followup", requireAuth, async (req, res) => {
   }
 });
 
+// ─── Query Fix (smart error recovery) ───
+
+app.post("/api/query/fix", requireAuth, async (req, res) => {
+  try {
+    const { question, sql, error } = req.body as {
+      question: string;
+      sql: string;
+      error: string;
+    };
+
+    if (!question || !sql || !error) {
+      res.status(400).json({ error: "question, sql, and error are required" });
+      return;
+    }
+
+    const [schema, descriptions] = await Promise.all([
+      getSchema(pool),
+      getDescriptions(),
+    ]);
+
+    const fix = await suggestQueryFix(
+      question,
+      sql,
+      error,
+      schema.tables,
+      schema.relations,
+      descriptions,
+    );
+
+    res.json(fix);
+  } catch (err) {
+    console.error("query/fix error:", err);
+    res.status(500).json({
+      error: err instanceof Error ? err.message : "Internal error",
+    });
+  }
+});
+
 // ─── History ───
 
 app.get("/api/history", requireAuth, async (req, res) => {
@@ -352,6 +396,113 @@ app.get("/api/history", requireAuth, async (req, res) => {
   const limit = Math.min(Number(req.query.limit || 20), 100);
   const history = await getQueryHistory(appPool, session.userId, limit);
   res.json({ history });
+});
+
+// ─── Favorites ───
+
+app.get("/api/favorites", requireAuth, async (req, res) => {
+  const session = getSession(req);
+  const favorites = await getUserFavorites(appPool, session.userId);
+  res.json({ favorites });
+});
+
+app.post("/api/favorites", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    const { question, sql } = req.body as { question: string; sql: string };
+    if (!question) {
+      res.status(400).json({ error: "question is required" });
+      return;
+    }
+    const favorite = await addFavorite(appPool, session.userId, question, sql || "");
+    res.json({ favorite });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
+});
+
+app.delete("/api/favorites/:id", requireAuth, async (req, res) => {
+  const session = getSession(req);
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const favoriteId = parseInt(idParam, 10);
+  if (isNaN(favoriteId)) {
+    res.status(400).json({ error: "Invalid ID" });
+    return;
+  }
+  const ok = await removeFavorite(appPool, favoriteId, session.userId);
+  if (!ok) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+// ─── Share ───
+
+app.post("/api/share", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    const { question, sql, rows, fields, rowCount, analysis, chart } = req.body as {
+      question: string;
+      sql: string;
+      rows: Record<string, unknown>[];
+      fields: string[];
+      rowCount: number;
+      analysis?: string;
+      chart?: unknown;
+    };
+
+    if (!question || !sql) {
+      res.status(400).json({ error: "question and sql are required" });
+      return;
+    }
+
+    const token = crypto.randomBytes(16).toString("hex");
+    const limitedRows = (rows || []).slice(0, 200);
+
+    await createSharedQuery(appPool, {
+      token,
+      user_id: session.userId,
+      question,
+      sql,
+      rows_json: limitedRows,
+      fields: fields || [],
+      row_count: rowCount || 0,
+      analysis: analysis || null,
+      chart_config: chart || null,
+    });
+
+    const baseUrl = process.env.WEB_URL || "https://querybot.leadsai.ru";
+    res.json({ token, url: `${baseUrl}/share/${token}` });
+  } catch (err) {
+    console.error("share error:", err);
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
+});
+
+app.get("/api/share/:token", async (req, res) => {
+  try {
+    const tokenParam = Array.isArray(req.params.token) ? req.params.token[0] : req.params.token;
+    const shared = await getSharedQuery(appPool, tokenParam);
+    if (!shared) {
+      res.status(404).json({ error: "Not found or expired" });
+      return;
+    }
+
+    res.json({
+      question: shared.question,
+      sql: shared.sql,
+      rows: shared.rows_json,
+      fields: shared.fields,
+      rowCount: shared.row_count,
+      analysis: shared.analysis,
+      chart: shared.chart_config,
+      createdAt: shared.created_at,
+      expiresAt: shared.expires_at,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
 });
 
 // ─── Suggestions ───

@@ -110,6 +110,14 @@ export default function ProfilePage() {
           >
             {t("nav.invites")}
           </Link>
+          {(user?.role === "admin" || user?.canSchedule) && (
+            <Link
+              href="/schedules"
+              className="block px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition"
+            >
+              {t("nav.schedules")}
+            </Link>
+          )}
           {(user?.role === "admin" || user?.canTrain) && (
             <Link
               href="/training"

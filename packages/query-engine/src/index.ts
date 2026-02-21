@@ -11,7 +11,8 @@ import type { SchemaDescriptions } from "./prompt";
 import type { QueryResponse } from "./types";
 
 export { getSchema, clearSchemaCache } from "./introspect";
-export { generateSQL } from "./generate";
+export { generateSQL, suggestQueryFix } from "./generate";
+export type { FixSuggestion } from "./generate";
 export { validateSQL } from "./validate";
 export { executeSQL } from "./execute";
 export { analyzeResults, answerFollowUp } from "./analyze";

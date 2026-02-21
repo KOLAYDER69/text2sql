@@ -374,6 +374,106 @@ export async function updateScheduleRun(
   );
 }
 
+// ─── Favorites ───
+
+export type AppQueryFavorite = {
+  id: number;
+  user_id: number;
+  question: string;
+  sql: string;
+  created_at: string;
+};
+
+export async function addFavorite(
+  pool: Pool,
+  userId: number,
+  question: string,
+  sql: string,
+): Promise<AppQueryFavorite> {
+  const { rows } = await pool.query<AppQueryFavorite>(
+    "INSERT INTO app_query_favorites (user_id, question, sql) VALUES ($1, $2, $3) RETURNING *",
+    [userId, question, sql],
+  );
+  return rows[0];
+}
+
+export async function removeFavorite(pool: Pool, favoriteId: number, userId: number): Promise<boolean> {
+  const result = await pool.query(
+    "DELETE FROM app_query_favorites WHERE id = $1 AND user_id = $2",
+    [favoriteId, userId],
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+export async function getUserFavorites(pool: Pool, userId: number): Promise<AppQueryFavorite[]> {
+  const { rows } = await pool.query<AppQueryFavorite>(
+    "SELECT * FROM app_query_favorites WHERE user_id = $1 ORDER BY created_at DESC",
+    [userId],
+  );
+  return rows;
+}
+
+// ─── Shared Queries ───
+
+export type AppSharedQuery = {
+  id: number;
+  token: string;
+  user_id: number;
+  question: string;
+  sql: string;
+  rows_json: Record<string, unknown>[];
+  fields: string[];
+  row_count: number;
+  analysis: string | null;
+  chart_config: unknown | null;
+  created_at: string;
+  expires_at: string;
+};
+
+export async function createSharedQuery(
+  pool: Pool,
+  data: {
+    token: string;
+    user_id: number;
+    question: string;
+    sql: string;
+    rows_json: Record<string, unknown>[];
+    fields: string[];
+    row_count: number;
+    analysis?: string | null;
+    chart_config?: unknown | null;
+  },
+): Promise<AppSharedQuery> {
+  const { rows } = await pool.query<AppSharedQuery>(
+    `INSERT INTO app_shared_queries (token, user_id, question, sql, rows_json, fields, row_count, analysis, chart_config)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     RETURNING *`,
+    [
+      data.token,
+      data.user_id,
+      data.question,
+      data.sql,
+      JSON.stringify(data.rows_json),
+      data.fields,
+      data.row_count,
+      data.analysis ?? null,
+      data.chart_config ? JSON.stringify(data.chart_config) : null,
+    ],
+  );
+  return rows[0];
+}
+
+export async function getSharedQuery(
+  pool: Pool,
+  token: string,
+): Promise<AppSharedQuery | null> {
+  const { rows } = await pool.query<AppSharedQuery>(
+    "SELECT * FROM app_shared_queries WHERE token = $1 AND expires_at > now()",
+    [token],
+  );
+  return rows[0] ?? null;
+}
+
 // ─── Schema Descriptions ───
 
 export type AppSchemaDescription = {

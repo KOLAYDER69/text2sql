@@ -146,6 +146,44 @@ const translations = {
   "perm.granted": { ru: "Разрешено", en: "Granted" },
   "perm.denied": { ru: "Запрещено", en: "Denied" },
 
+  // ─── Actions ───
+  "main.copySql": { ru: "Скопировать SQL", en: "Copy SQL" },
+  "main.exportCsv": { ru: "Скачать CSV", en: "Download CSV" },
+  "main.suggestFix": { ru: "Помочь исправить", en: "Suggest a fix" },
+  "main.analyzingError": { ru: "Анализирую ошибку...", en: "Analyzing error..." },
+  "main.tryAgain": { ru: "Попробовать снова", en: "Try again" },
+  "main.share": { ru: "Поделиться", en: "Share" },
+  "main.sharing": { ru: "Создаю ссылку...", en: "Creating link..." },
+  "main.linkCopied": { ru: "Ссылка скопирована", en: "Link copied" },
+  "nav.favorites": { ru: "Избранное", en: "Favorites" },
+  "nav.schedules": { ru: "Расписания", en: "Schedules" },
+
+  // ─── Schedules page ───
+  "schedules.title": { ru: "Расписания", en: "Schedules" },
+  "schedules.subtitle": { ru: "Автоматические периодические запросы", en: "Automatic periodic queries" },
+  "schedules.create": { ru: "Создать", en: "Create" },
+  "schedules.creating": { ru: "Создаю...", en: "Creating..." },
+  "schedules.empty": { ru: "Нет активных расписаний", en: "No active schedules" },
+  "schedules.emptyHint": { ru: "Создайте расписание для автоматических запросов", en: "Create a schedule for automated queries" },
+  "schedules.questionPlaceholder": { ru: "Вопрос для регулярного запроса...", en: "Question for regular query..." },
+  "schedules.hourly": { ru: "Каждый час", en: "Hourly" },
+  "schedules.daily": { ru: "Ежедневно (9:00)", en: "Daily (9:00)" },
+  "schedules.weekly": { ru: "Еженедельно (Пн)", en: "Weekly (Mon)" },
+  "schedules.monthly": { ru: "Ежемесячно (1-е)", en: "Monthly (1st)" },
+  "schedules.lastRun": { ru: "Последний запуск", en: "Last run" },
+  "schedules.never": { ru: "Ещё не запускался", en: "Never run yet" },
+  "schedules.lastError": { ru: "Ошибка", en: "Error" },
+  "schedules.delete": { ru: "Удалить", en: "Delete" },
+  "schedules.noPermission": { ru: "У вас нет доступа к расписаниям", en: "You don't have access to schedules" },
+  "schedules.validating": { ru: "Проверяю запрос...", en: "Validating query..." },
+
+  // ─── Share ───
+  "share.title": { ru: "Результат запроса", en: "Query Result" },
+  "share.expired": { ru: "Ссылка истекла или не найдена", en: "Link expired or not found" },
+  "share.expiresAt": { ru: "Действует до", en: "Valid until" },
+  "share.openApp": { ru: "Открыть Leads AI", en: "Open Leads AI" },
+  "share.sharedOn": { ru: "Опубликовано", en: "Shared on" },
+
   // ─── Language ───
   "lang.ru": { ru: "Русский", en: "Russian" },
   "lang.en": { ru: "English", en: "English" },

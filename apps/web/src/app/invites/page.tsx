@@ -87,6 +87,7 @@ export default function InvitesPage() {
   const [newInvite, setNewInvite] = useState<{ code: string; deepLink: string } | null>(null);
   const [userVip, setUserVip] = useState(false);
   const [userCanTrain, setUserCanTrain] = useState(false);
+  const [userCanSchedule, setUserCanSchedule] = useState(false);
   const [userRole, setUserRole] = useState("");
 
   const botName = "leadsaibot";
@@ -99,6 +100,7 @@ export default function InvitesPage() {
       .then((data) => {
         if (data?.user?.isVip) setUserVip(true);
         if (data?.user?.canTrain) setUserCanTrain(true);
+        if (data?.user?.canSchedule) setUserCanSchedule(true);
         if (data?.user?.role) setUserRole(data.user.role);
       })
       .catch(() => {});
@@ -219,6 +221,11 @@ export default function InvitesPage() {
           <Link href="/invites" className="block px-3 py-2 rounded-lg text-sm text-white bg-white/5 font-medium">
             {t("nav.invites")}
           </Link>
+          {(userRole === "admin" || userCanSchedule) && (
+            <Link href="/schedules" className="block px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition">
+              {t("nav.schedules")}
+            </Link>
+          )}
           {(userRole === "admin" || userCanTrain) && (
             <Link href="/training" className="block px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition">
               {t("nav.training")}

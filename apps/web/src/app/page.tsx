@@ -89,12 +89,20 @@ type HistoryItem = {
   created_at: string;
 };
 
+type FavoriteItem = {
+  id: number;
+  question: string;
+  sql: string;
+  created_at: string;
+};
+
 type UserInfo = {
   firstName: string;
   username: string | null;
   role: string;
   isVip?: boolean;
   canTrain?: boolean;
+  canSchedule?: boolean;
 };
 
 export default function Home() {
@@ -109,6 +117,12 @@ export default function Home() {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [refreshingSuggestions, setRefreshingSuggestions] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
+  const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
+  const [fixSuggestion, setFixSuggestion] = useState<{ suggestion: string; fixedSql?: string } | null>(null);
+  const [fixLoading, setFixLoading] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -133,6 +147,7 @@ export default function Home() {
       .catch(() => {});
 
     loadHistory();
+    loadFavorites();
   }, []);
 
   function loadHistory() {
@@ -144,6 +159,33 @@ export default function Home() {
       .catch(() => {});
   }
 
+  function loadFavorites() {
+    fetch("/api/favorites")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.favorites) setFavorites(data.favorites);
+      })
+      .catch(() => {});
+  }
+
+  async function toggleFavorite(question: string, sql: string) {
+    const existing = favorites.find((f) => f.question === question);
+    if (existing) {
+      setFavorites((prev) => prev.filter((f) => f.id !== existing.id));
+      await fetch(`/api/favorites/${existing.id}`, { method: "DELETE" }).catch(() => {});
+    } else {
+      try {
+        const res = await fetch("/api/favorites", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question, sql }),
+        });
+        const data = await res.json();
+        if (data.favorite) setFavorites((prev) => [data.favorite, ...prev]);
+      } catch { /* ignore */ }
+    }
+  }
+
   // Get the first assistant message with a result (the original query context)
   function getQueryContext(): QueryResult | undefined {
     return messages.find((m) => m.role === "assistant" && m.result)?.result;
@@ -153,6 +195,10 @@ export default function Home() {
     if (!question.trim() || loading || clarifying) return;
     setInput("");
     setClarifying(true);
+    setFixSuggestion(null);
+    setFixLoading(false);
+    setShareUrl(null);
+    setSharing(false);
 
     const q = question.trim();
 
@@ -413,6 +459,77 @@ export default function Home() {
     }
   }
 
+  function copySQL(sql: string) {
+    navigator.clipboard.writeText(sql);
+    setCopiedSql(true);
+    setTimeout(() => setCopiedSql(false), 2000);
+  }
+
+  function downloadCSV(fields: string[], rows: Record<string, unknown>[]) {
+    const esc = (v: unknown) => {
+      const s = String(v ?? "");
+      return s.includes(",") || s.includes('"') || s.includes("\n")
+        ? `"${s.replace(/"/g, '""')}"`
+        : s;
+    };
+    const csv = [fields.map(esc).join(","), ...rows.map((r) => fields.map((f) => esc(r[f])).join(","))].join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    a.href = url;
+    a.download = `query-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function requestFix(question: string, sql: string, error: string) {
+    if (fixLoading) return;
+    setFixLoading(true);
+    setFixSuggestion(null);
+    try {
+      const res = await fetch("/api/query/fix", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question, sql, error }),
+      });
+      const data = await res.json();
+      if (data.suggestion) setFixSuggestion(data);
+    } catch {
+      // ignore
+    } finally {
+      setFixLoading(false);
+    }
+  }
+
+  async function shareResult(result: QueryResult) {
+    if (sharing) return;
+    setSharing(true);
+    try {
+      const res = await fetch("/api/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: result.question,
+          sql: result.sql,
+          rows: result.rows,
+          fields: result.fields,
+          rowCount: result.rowCount,
+          analysis: result.analysis,
+          chart: result.chart,
+        }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        setShareUrl(data.url);
+        navigator.clipboard.writeText(data.url);
+      }
+    } catch { /* ignore */ } finally {
+      setSharing(false);
+    }
+  }
+
   const defaultSuggestions = [
     t("suggestion.1"),
     t("suggestion.2"),
@@ -456,31 +573,57 @@ export default function Home() {
           </button>
         </div>
 
-        {/* History list */}
+        {/* History + Favorites */}
         <div className="flex-1 overflow-y-auto px-2">
-          <p className="text-xs text-white/30 px-2 py-2 uppercase tracking-wider">
-            {t("nav.history")}
-          </p>
+          {favorites.length > 0 && (
+            <>
+              <p className="text-xs text-amber-400/40 px-2 py-2 uppercase tracking-wider">{t("nav.favorites")}</p>
+              {favorites.map((fav) => (
+                <div key={fav.id} className="flex items-center group mb-0.5">
+                  <button
+                    onClick={() => runQuery(fav.question)}
+                    className="flex-1 text-left px-2 py-2 rounded-md hover:bg-white/5 transition min-w-0"
+                  >
+                    <p className="text-sm truncate text-amber-400/70 group-hover:text-amber-300 transition">{fav.question}</p>
+                  </button>
+                  <button
+                    onClick={() => toggleFavorite(fav.question, fav.sql)}
+                    className="p-1 text-amber-400 hover:text-amber-300 transition shrink-0"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l2.2 4.5 5 .7-3.6 3.5.9 5L8 12.4 3.5 14.7l.9-5L.8 6.2l5-.7z" /></svg>
+                  </button>
+                </div>
+              ))}
+            </>
+          )}
+          <p className="text-xs text-white/30 px-2 py-2 uppercase tracking-wider">{t("nav.history")}</p>
           {history.length === 0 ? (
             <p className="text-white/20 text-xs px-2">{t("main.noHistory")}</p>
           ) : (
             history.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => handleHistoryClick(item)}
-                className="w-full text-left px-2 py-2 rounded-md hover:bg-white/5 transition group mb-0.5"
-              >
-                <p className="text-sm truncate text-white/70 group-hover:text-white transition">
-                  {item.question}
-                </p>
-                <p className="text-[11px] text-white/25 mt-0.5">
-                  {item.error
-                    ? t("main.error")
-                    : `${item.row_count} ${t("main.rows")}`}
-                  {" · "}
-                  {new Date(item.created_at).toLocaleDateString("ru")}
-                </p>
-              </button>
+              <div key={item.id} className="flex items-center group mb-0.5">
+                <button
+                  onClick={() => handleHistoryClick(item)}
+                  className="flex-1 text-left px-2 py-2 rounded-md hover:bg-white/5 transition min-w-0"
+                >
+                  <p className="text-sm truncate text-white/70 group-hover:text-white transition">{item.question}</p>
+                  <p className="text-[11px] text-white/25 mt-0.5">
+                    {item.error ? t("main.error") : `${item.row_count} ${t("main.rows")}`}
+                    {" · "}
+                    {new Date(item.created_at).toLocaleDateString("ru")}
+                  </p>
+                </button>
+                <button
+                  onClick={() => toggleFavorite(item.question, item.sql)}
+                  className={`p-1 transition shrink-0 ${
+                    favorites.some((f) => f.question === item.question)
+                      ? "text-amber-400"
+                      : "text-white/10 hover:text-white/30"
+                  }`}
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l2.2 4.5 5 .7-3.6 3.5.9 5L8 12.4 3.5 14.7l.9-5L.8 6.2l5-.7z" /></svg>
+                </button>
+              </div>
             ))
           )}
         </div>
@@ -496,6 +639,17 @@ export default function Home() {
             </svg>
             {t("nav.invites")}
           </Link>
+          {(user?.role === "admin" || user?.canSchedule) && (
+            <Link
+              href="/schedules"
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <circle cx="8" cy="8" r="6" /><path d="M8 4v4l3 2" />
+              </svg>
+              {t("nav.schedules")}
+            </Link>
+          )}
           {(user?.role === "admin" || user?.canTrain) && (
             <Link
               href="/training"
@@ -686,8 +840,51 @@ export default function Home() {
                     /* Assistant message with full query result */
                     <div className="space-y-4">
                       {msg.result.error && (
-                        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-red-400 text-sm">
-                          {msg.result.error}
+                        <div className="space-y-3">
+                          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-red-400 text-sm">
+                            {msg.result.error}
+                          </div>
+
+                          {/* Smart error recovery */}
+                          {!fixSuggestion && !fixLoading && msg.result.sql && (
+                            <button
+                              onClick={() => requestFix(msg.result!.question, msg.result!.sql, msg.result!.error!)}
+                              className="flex items-center gap-2 text-sm text-amber-400/60 hover:text-amber-400 transition"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                                <circle cx="8" cy="8" r="6" /><path d="M8 5v3M8 10.5v.5" />
+                              </svg>
+                              {t("main.suggestFix")}
+                            </button>
+                          )}
+
+                          {fixLoading && (
+                            <div className="flex items-center gap-2 text-xs text-white/40">
+                              <div className="animate-spin h-3 w-3 border border-amber-500/30 border-t-amber-400 rounded-full" />
+                              {t("main.analyzingError")}
+                            </div>
+                          )}
+
+                          {fixSuggestion && (
+                            <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 space-y-3">
+                              <p className="text-sm text-white/70">{fixSuggestion.suggestion}</p>
+                              {fixSuggestion.fixedSql && (
+                                <pre className="text-xs font-mono text-emerald-400 bg-black/30 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">
+                                  {fixSuggestion.fixedSql}
+                                </pre>
+                              )}
+                              <button
+                                onClick={() => {
+                                  setFixSuggestion(null);
+                                  setMessages([]);
+                                  runQuery(msg.result!.question);
+                                }}
+                                className="px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-600 hover:bg-amber-500 transition"
+                              >
+                                {t("main.tryAgain")}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -703,10 +900,18 @@ export default function Home() {
 
                       {msg.result.rows && msg.result.rows.length > 0 && msg.result.fields && (
                         <div className="bg-white/[0.03] border border-white/10 rounded-xl overflow-hidden">
-                          <div className="px-4 py-2 border-b border-white/10">
+                          <div className="px-4 py-2 border-b border-white/10 flex items-center justify-between">
                             <span className="text-xs text-white/40">
                               {msg.result.rowCount} {t("main.rows")} · {msg.result.executionMs}{t("main.ms")}
                             </span>
+                            <button
+                              onClick={() => downloadCSV(msg.result!.fields, msg.result!.rows)}
+                              className="flex items-center gap-1.5 text-xs text-white/30 hover:text-white/60 transition"
+                              title={t("main.exportCsv")}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M3 10v3h10v-3M8 2v8M5 7l3 3 3-3" /></svg>
+                              CSV
+                            </button>
                           </div>
                           <div className="overflow-x-auto">
                             <table className="w-full text-sm">
@@ -753,10 +958,41 @@ export default function Home() {
                         <div className="bg-white/[0.03] border border-white/10 rounded-xl overflow-hidden">
                           <div className="px-4 py-2 border-b border-white/10 flex items-center justify-between">
                             <span className="text-xs text-white/40 uppercase tracking-wider font-medium">SQL</span>
+                            <button
+                              onClick={() => copySQL(msg.result!.sql)}
+                              className="text-white/30 hover:text-white/60 transition p-1 rounded"
+                              title={t("main.copySql")}
+                            >
+                              {copiedSql ? (
+                                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 8.5l3 3 7-7" /></svg>
+                              ) : (
+                                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><rect x="5" y="5" width="8" height="8" rx="1.5" /><path d="M3 11V3a1.5 1.5 0 0 1 1.5-1.5H11" /></svg>
+                              )}
+                            </button>
                           </div>
                           <pre className="p-4 text-sm font-mono text-emerald-400 overflow-x-auto whitespace-pre-wrap">
                             {msg.result.sql}
                           </pre>
+                        </div>
+                      )}
+
+                      {/* Share button */}
+                      {!msg.result.error && msg.result.sql && (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => shareResult(msg.result!)}
+                            disabled={sharing}
+                            className="flex items-center gap-1.5 text-xs text-white/30 hover:text-white/60 transition disabled:opacity-40"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                              <circle cx="12" cy="3" r="2" /><circle cx="4" cy="8" r="2" /><circle cx="12" cy="13" r="2" />
+                              <path d="M5.7 9.1l4.6 2.8M10.3 4.1l-4.6 2.8" />
+                            </svg>
+                            {sharing ? t("main.sharing") : shareUrl ? t("main.linkCopied") : t("main.share")}
+                          </button>
+                          {shareUrl && (
+                            <span className="text-xs text-emerald-400/60 truncate max-w-[200px]">{shareUrl}</span>
+                          )}
                         </div>
                       )}
 
