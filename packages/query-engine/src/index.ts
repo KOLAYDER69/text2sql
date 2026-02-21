@@ -23,6 +23,7 @@ export { generateSuggestions } from "./suggestions";
 export { buildChartConfig } from "./chart";
 export { translateQuestion } from "./translate";
 export { generateClarifications } from "./clarify";
+export { generateDescriptionSuggestions } from "./suggest";
 export type { ClarifyQuestion, ClarifyResult } from "./clarify";
 export * from "./types";
 export * from "./app-db";

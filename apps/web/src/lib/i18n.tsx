@@ -114,6 +114,18 @@ const translations = {
   "training.adminOnly": { ru: "Только администраторы могут редактировать описания", en: "Only admins can edit descriptions" },
   "training.stats": { ru: "Покрытие", en: "Coverage" },
   "training.tables": { ru: "таблиц", en: "tables" },
+  "training.startTraining": { ru: "Запустить обучение", en: "Start Training" },
+  "training.wizardCard": { ru: "Карточка", en: "Card" },
+  "training.wizardOf": { ru: "из", en: "of" },
+  "training.wizardSuggestions": { ru: "Предложения AI", en: "AI Suggestions" },
+  "training.wizardGenerating": { ru: "Генерирую варианты...", en: "Generating suggestions..." },
+  "training.wizardCustom": { ru: "Своё описание...", en: "Custom description..." },
+  "training.wizardSave": { ru: "Сохранить", en: "Save" },
+  "training.wizardTableLevel": { ru: "Таблица", en: "Table" },
+  "training.wizardColumnLevel": { ru: "Колонка", en: "Column" },
+  "training.wizardComplete": { ru: "Обучение завершено!", en: "Training complete!" },
+  "training.wizardEmpty": { ru: "Нет незаполненных описаний", en: "No empty descriptions" },
+  "training.wizardSkip": { ru: "Пропустить", en: "Skip" },
 
   // ─── Language ───
   "lang.ru": { ru: "Русский", en: "Russian" },

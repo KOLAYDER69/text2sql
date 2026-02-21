@@ -254,6 +254,263 @@ function TableAccordion({
   );
 }
 
+type WizardItem = {
+  tableName: string;
+  columnName: string | null;
+  label: string;
+  level: "table" | "column";
+  // Column metadata (for column-level items)
+  dataType?: string;
+  udtName?: string;
+  isNullable?: string;
+  columnDefault?: string | null;
+  enumValues?: string[];
+  rowCount?: number;
+};
+
+function TrainingWizard({
+  items,
+  tables,
+  descriptions,
+  onSave,
+  onClose,
+}: {
+  items: WizardItem[];
+  tables: TableSchema[];
+  descriptions: Map<string, string>;
+  onSave: (tableName: string, columnName: string | null, description: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  const [index, setIndex] = useState(0);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [customValue, setCustomValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [complete, setComplete] = useState(false);
+
+  const item = items[index];
+  const total = items.length;
+  const progress = total > 0 ? (index / total) * 100 : 0;
+
+  // Fetch AI suggestions when card changes
+  useEffect(() => {
+    if (!item) return;
+    setSuggestions([]);
+    setCustomValue("");
+    setLoadingSuggestions(true);
+
+    fetch("/api/schema/suggest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        table_name: item.tableName,
+        column_name: item.columnName,
+      }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.suggestions) setSuggestions(data.suggestions);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingSuggestions(false));
+  }, [index, item?.tableName, item?.columnName]);
+
+  async function handleSelect(description: string) {
+    if (!item || saving) return;
+    setSaving(true);
+    await onSave(item.tableName, item.columnName, description);
+    setSaving(false);
+    advance();
+  }
+
+  async function handleCustomSave() {
+    if (!customValue.trim() || !item) return;
+    await handleSelect(customValue.trim());
+  }
+
+  function advance() {
+    if (index + 1 >= total) {
+      setComplete(true);
+    } else {
+      setIndex(index + 1);
+    }
+  }
+
+  function handleSkip() {
+    advance();
+  }
+
+  if (complete) {
+    return (
+      <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+        <div className="bg-[#141414] border border-white/10 rounded-2xl p-8 max-w-sm w-full text-center">
+          <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-4">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400">
+              <path d="M20 6L9 17l-5-5" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold mb-2">{t("training.wizardComplete")}</h3>
+          <button
+            onClick={onClose}
+            className="mt-4 px-6 py-2 bg-white/10 hover:bg-white/15 rounded-lg text-sm transition"
+          >
+            OK
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!item) return null;
+
+  // Find table info for metadata display
+  const tableInfo = tables.find((t) => t.name === item.tableName);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-[#141414] border border-white/10 rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-white/40 tabular-nums">
+              {t("training.wizardCard")} {index + 1} {t("training.wizardOf")} {total}
+            </span>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+              item.level === "table"
+                ? "bg-blue-500/20 text-blue-300"
+                : "bg-purple-500/20 text-purple-300"
+            }`}>
+              {item.level === "table" ? t("training.wizardTableLevel") : t("training.wizardColumnLevel")}
+            </span>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-white/30 hover:text-white transition p-1"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Progress bar */}
+        <div className="h-0.5 bg-white/5">
+          <div
+            className="h-full bg-blue-500/60 transition-all duration-300"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+
+        {/* Card content */}
+        <div className="p-4 space-y-4">
+          {/* Item name */}
+          <div>
+            <h3 className="font-mono text-base font-semibold">{item.label}</h3>
+          </div>
+
+          {/* Metadata */}
+          <div className="flex flex-wrap gap-2 text-[11px]">
+            {item.level === "column" && item.dataType && (
+              <span className="px-2 py-0.5 rounded bg-white/5 text-white/50">
+                {item.dataType === "USER-DEFINED" ? item.udtName : item.dataType}
+              </span>
+            )}
+            {item.level === "column" && item.isNullable === "YES" && (
+              <span className="px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-300/60">
+                nullable
+              </span>
+            )}
+            {item.level === "column" && item.columnDefault && (
+              <span className="px-2 py-0.5 rounded bg-white/5 text-white/40">
+                default: {item.columnDefault}
+              </span>
+            )}
+            {item.rowCount !== undefined && (
+              <span className="px-2 py-0.5 rounded bg-white/5 text-white/40">
+                ~{item.rowCount.toLocaleString()} rows
+              </span>
+            )}
+            {item.enumValues && item.enumValues.length > 0 && (
+              <span className="px-2 py-0.5 rounded bg-white/5 text-white/40 max-w-full truncate">
+                [{item.enumValues.join(", ")}]
+              </span>
+            )}
+          </div>
+
+          {/* Existing table description context (for column-level items) */}
+          {item.level === "column" && descriptions.get(item.tableName) && (
+            <p className="text-[11px] text-white/30 italic">
+              {item.tableName}: {descriptions.get(item.tableName)}
+            </p>
+          )}
+
+          {/* AI Suggestions */}
+          <div>
+            <p className="text-xs text-white/40 mb-2">{t("training.wizardSuggestions")}</p>
+            {loadingSuggestions ? (
+              <div className="flex items-center gap-2 py-4 justify-center">
+                <div className="animate-spin h-4 w-4 border-2 border-white/20 border-t-blue-400 rounded-full" />
+                <span className="text-xs text-white/30">{t("training.wizardGenerating")}</span>
+              </div>
+            ) : suggestions.length > 0 ? (
+              <div className="space-y-1.5">
+                {suggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    onClick={() => handleSelect(s)}
+                    disabled={saving}
+                    className="w-full text-left px-3 py-2.5 rounded-lg bg-white/[0.03] border border-white/10 hover:border-blue-500/30 hover:bg-white/[0.06] transition text-sm text-white/70 disabled:opacity-40"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-white/20 py-2">No suggestions</p>
+            )}
+          </div>
+
+          {/* Custom input */}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={customValue}
+              onChange={(e) => setCustomValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && customValue.trim()) handleCustomSave();
+              }}
+              placeholder={t("training.wizardCustom")}
+              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500/50 transition"
+            />
+            <button
+              onClick={handleCustomSave}
+              disabled={!customValue.trim() || saving}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-30 disabled:hover:bg-blue-600 rounded-lg text-sm font-medium transition shrink-0"
+            >
+              {t("training.wizardSave")}
+            </button>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-4 py-3 border-t border-white/10 flex justify-between">
+          <button
+            onClick={handleSkip}
+            disabled={saving}
+            className="text-sm text-white/30 hover:text-white/60 transition disabled:opacity-30"
+          >
+            {t("training.wizardSkip")}
+          </button>
+          <span className="text-[10px] text-white/20 tabular-nums self-center">
+            {Math.round(progress)}%
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TrainingPage() {
   const { t } = useI18n();
   const [tables, setTables] = useState<TableSchema[]>([]);
@@ -261,6 +518,7 @@ export default function TrainingPage() {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   const isAdmin = user?.role === "admin";
 
@@ -347,6 +605,40 @@ export default function TrainingPage() {
     totalTables + totalCols > 0
       ? (describedTables + describedCols) / (totalTables + totalCols)
       : 0;
+
+  // Build wizard queue: tables without descriptions first, then columns
+  const wizardItems: WizardItem[] = [];
+  for (const table of tables) {
+    if (!descriptions.has(table.name)) {
+      wizardItems.push({
+        tableName: table.name,
+        columnName: null,
+        label: table.name,
+        level: "table",
+        rowCount: table.rowCount,
+      });
+    }
+  }
+  for (const table of tables) {
+    for (const col of table.columns) {
+      const key = `${table.name}.${col.column_name}`;
+      if (!descriptions.has(key)) {
+        wizardItems.push({
+          tableName: table.name,
+          columnName: col.column_name,
+          label: `${table.name}.${col.column_name}`,
+          level: "column",
+          dataType: col.data_type,
+          udtName: col.udt_name,
+          isNullable: col.is_nullable,
+          columnDefault: col.column_default,
+          enumValues: col.enum_values,
+          rowCount: table.rowCount,
+        });
+      }
+    }
+  }
+  const hasUndescribed = wizardItems.length > 0;
 
   return (
     <div className="flex h-screen bg-[#0a0a0a] text-white">
@@ -447,6 +739,16 @@ export default function TrainingPage() {
                     />
                   </div>
 
+                  {/* Start Training button */}
+                  {isAdmin && hasUndescribed && (
+                    <button
+                      onClick={() => setWizardOpen(true)}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs font-medium transition shrink-0"
+                    >
+                      {t("training.startTraining")}
+                    </button>
+                  )}
+
                   {/* Compact stats */}
                   <div className="hidden sm:flex items-center gap-4 text-[11px] text-white/40 shrink-0">
                     <span>
@@ -514,6 +816,16 @@ export default function TrainingPage() {
         )}
       </div>
 
+      {/* Training Wizard overlay */}
+      {wizardOpen && (
+        <TrainingWizard
+          items={wizardItems}
+          tables={tables}
+          descriptions={descriptions}
+          onSave={handleSave}
+          onClose={() => setWizardOpen(false)}
+        />
+      )}
     </div>
   );
 }

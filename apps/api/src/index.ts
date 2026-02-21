@@ -17,6 +17,7 @@ import {
   saveQueryHistory,
   getQueryHistory,
   generateSuggestions,
+  generateDescriptionSuggestions,
   saveSuggestions,
   getLatestSuggestions,
   createInvite,
@@ -530,6 +531,52 @@ app.delete("/api/schema/descriptions", requireAuth, async (req, res) => {
     res.json({ ok, deleted: ok });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
+});
+
+// ─── Schema description suggestions (AI) ───
+
+app.post("/api/schema/suggest", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    if (session.role !== "admin") {
+      res.status(403).json({ error: "Admin only" });
+      return;
+    }
+
+    const { table_name, column_name } = req.body as {
+      table_name: string;
+      column_name: string | null;
+    };
+
+    if (!table_name) {
+      res.status(400).json({ error: "table_name is required" });
+      return;
+    }
+
+    const [{ tables }, descMap] = await Promise.all([
+      getSchema(pool),
+      getDescriptions(),
+    ]);
+
+    const table = tables.find((t) => t.name === table_name);
+    if (!table) {
+      res.status(404).json({ error: "Table not found" });
+      return;
+    }
+
+    const suggestions = await generateDescriptionSuggestions(
+      table,
+      column_name ?? null,
+      descMap,
+    );
+
+    res.json({ suggestions });
+  } catch (err) {
+    console.error("schema/suggest error:", err);
+    res.status(500).json({
+      error: err instanceof Error ? err.message : "Internal error",
+    });
   }
 });
 
