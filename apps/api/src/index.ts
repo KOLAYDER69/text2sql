@@ -210,19 +210,24 @@ app.post("/api/auth/logout", (_req, res) => {
 });
 
 // GET /api/auth/me
-app.get("/api/auth/me", requireAuth, (req, res) => {
+app.get("/api/auth/me", requireAuth, async (req, res) => {
   const session = getSession(req);
+  const user = await findUserById(appPool, session.userId);
+  if (!user) {
+    res.status(401).json({ error: "User not found" });
+    return;
+  }
   res.json({
     user: {
-      id: session.userId,
-      username: session.username,
-      firstName: session.firstName,
-      role: session.role,
-      isVip: session.isVip ?? false,
-      canQuery: session.canQuery ?? true,
-      canInvite: session.canInvite ?? true,
-      canTrain: session.canTrain ?? false,
-      canSchedule: session.canSchedule ?? true,
+      id: user.id,
+      username: user.username,
+      firstName: user.first_name,
+      role: user.role,
+      isVip: user.is_vip,
+      canQuery: user.can_query,
+      canInvite: user.can_invite,
+      canTrain: user.can_train,
+      canSchedule: user.can_schedule,
     },
   });
 });
