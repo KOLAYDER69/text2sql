@@ -706,8 +706,46 @@ export default function TrainingPage() {
         </header>
 
         {loading ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="animate-spin h-5 w-5 border-2 border-white/20 border-t-white rounded-full" />
+          <div className="flex-1 flex flex-col animate-pulse">
+            {/* Sticky search + stats skeleton */}
+            <div className="sticky top-0 z-10 bg-[#0a0a0a]/95 border-b border-white/5 px-3 sm:px-4 lg:px-6 py-3 space-y-3">
+              <div className="max-w-4xl mx-auto">
+                <div className="hidden lg:block mb-3 space-y-2">
+                  <div className="h-6 w-40 rounded-lg bg-white/[0.06]" />
+                  <div className="h-3 w-64 rounded-lg bg-white/[0.06]" />
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-9 rounded-lg bg-white/[0.06]" />
+                  <div className="hidden sm:flex items-center gap-4">
+                    <div className="h-3 w-24 rounded-lg bg-white/[0.06]" />
+                    <div className="h-3 w-28 rounded-lg bg-white/[0.06]" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <div className="flex-1 h-1 rounded-full bg-white/[0.06]" />
+                  <div className="h-2.5 w-8 rounded bg-white/[0.06]" />
+                </div>
+              </div>
+            </div>
+            {/* Table list skeleton */}
+            <div className="flex-1 overflow-y-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-4">
+              <div className="max-w-4xl mx-auto space-y-2">
+                {[120, 160, 100, 140, 180, 110, 150, 130].map((w, i) => (
+                  <div key={i} className="bg-white/[0.03] border border-white/10 rounded-xl px-3 sm:px-4 py-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 sm:gap-3">
+                        <div className="w-2.5 h-2.5 rounded-sm bg-white/[0.06]" />
+                        <div className="h-4 rounded-lg bg-white/[0.06]" style={{ width: w }} />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="hidden sm:block w-16 h-1 rounded-full bg-white/[0.06]" />
+                        <div className="h-3 w-8 rounded bg-white/[0.06]" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         ) : (
           <>

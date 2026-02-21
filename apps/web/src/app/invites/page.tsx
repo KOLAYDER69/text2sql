@@ -324,8 +324,47 @@ export default function InvitesPage() {
 
             {/* Table */}
             {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="animate-spin h-5 w-5 border-2 border-white/20 border-t-white rounded-full" />
+              <div className="animate-pulse space-y-6">
+                {/* Table skeleton */}
+                <div className="bg-white/[0.03] border border-white/10 rounded-xl overflow-hidden">
+                  <div className="flex gap-4 px-4 py-2.5 border-b border-white/10 bg-white/[0.02]">
+                    <div className="h-3 w-16 rounded-lg bg-white/[0.06]" />
+                    <div className="h-3 w-14 rounded-lg bg-white/[0.06]" />
+                    <div className="h-3 w-20 rounded-lg bg-white/[0.06]" />
+                    <div className="h-3 w-20 rounded-lg bg-white/[0.06]" />
+                    <div className="h-3 w-12 rounded-lg bg-white/[0.06] ml-auto" />
+                  </div>
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-4 px-4 py-3 border-b border-white/5">
+                      <div className="h-4 w-20 rounded-lg bg-white/[0.06]" />
+                      <div className="h-5 w-14 rounded-full bg-white/[0.06]" />
+                      <div className="h-4 w-20 rounded-lg bg-white/[0.06]" />
+                      <div className="h-4 w-20 rounded-lg bg-white/[0.06]" />
+                      <div className="h-3 w-16 rounded-lg bg-white/[0.06] ml-auto" />
+                    </div>
+                  ))}
+                </div>
+                {/* Invited users skeleton */}
+                <div className="space-y-3">
+                  <div className="h-5 w-32 rounded-lg bg-white/[0.06]" />
+                  {Array.from({ length: 2 }).map((_, i) => (
+                    <div key={i} className="bg-white/[0.03] border border-white/10 rounded-xl p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-white/[0.06] shrink-0" />
+                        <div className="space-y-1.5 flex-1">
+                          <div className="h-4 w-28 rounded-lg bg-white/[0.06]" />
+                          <div className="h-2.5 w-16 rounded-lg bg-white/[0.06]" />
+                        </div>
+                        <div className="h-5 w-14 rounded-full bg-white/[0.06]" />
+                      </div>
+                      <div className="flex gap-4 mt-3 pt-3 border-t border-white/5">
+                        {Array.from({ length: 5 }).map((_, j) => (
+                          <div key={j} className="h-4 w-12 rounded-lg bg-white/[0.06]" />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : invites.length === 0 ? (
               <div className="text-center py-12 text-white/30">

@@ -149,8 +149,65 @@ export default function ProfilePage() {
 
         <div className="flex-1 overflow-y-auto p-4 lg:p-6">
           {loading ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="animate-spin h-5 w-5 border-2 border-white/20 border-t-white rounded-full" />
+            <div className="max-w-4xl mx-auto space-y-6 animate-pulse">
+              {/* User card skeleton */}
+              <div className="bg-white/[0.03] border border-white/10 rounded-xl p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 rounded-full bg-white/[0.06]" />
+                    <div className="space-y-2">
+                      <div className="h-5 w-32 rounded-lg bg-white/[0.06]" />
+                      <div className="h-3 w-20 rounded-lg bg-white/[0.06]" />
+                      <div className="h-5 w-16 rounded-full bg-white/[0.06]" />
+                    </div>
+                  </div>
+                  <div className="h-9 w-20 rounded-xl bg-white/[0.06]" />
+                </div>
+              </div>
+              {/* Permissions skeleton */}
+              <div className="bg-white/[0.03] border border-white/10 rounded-xl p-5">
+                <div className="h-3 w-28 rounded-lg bg-white/[0.06] mb-3" />
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="h-10 rounded-lg bg-white/[0.06]" />
+                  ))}
+                </div>
+              </div>
+              {/* Stats skeleton */}
+              <div>
+                <div className="h-3 w-20 rounded-lg bg-white/[0.06] mb-3" />
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div key={i} className="bg-white/[0.03] border border-white/10 rounded-xl p-4 space-y-2">
+                      <div className="h-7 w-12 rounded-lg bg-white/[0.06]" />
+                      <div className="h-3 w-16 rounded-lg bg-white/[0.06]" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Activity chart skeleton */}
+              <div className="bg-white/[0.03] border border-white/10 rounded-xl p-5">
+                <div className="h-3 w-24 rounded-lg bg-white/[0.06] mb-4" />
+                <div className="flex items-end gap-1.5 h-24">
+                  {[40, 65, 30, 80, 55, 45, 70].map((h, i) => (
+                    <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                      <div className="w-full flex items-end justify-center" style={{ height: 80 }}>
+                        <div className="w-full max-w-[32px] rounded-t bg-white/[0.06]" style={{ height: `${h}%` }} />
+                      </div>
+                      <div className="h-2 w-8 rounded bg-white/[0.06]" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Quick links skeleton */}
+              <div className="flex gap-3">
+                {Array.from({ length: 2 }).map((_, i) => (
+                  <div key={i} className="flex-1 bg-white/[0.03] border border-white/10 rounded-xl p-4 space-y-2">
+                    <div className="h-4 w-20 rounded-lg bg-white/[0.06] mx-auto" />
+                    <div className="h-3 w-28 rounded-lg bg-white/[0.06] mx-auto" />
+                  </div>
+                ))}
+              </div>
             </div>
           ) : (
             <div className="max-w-4xl mx-auto space-y-6">
