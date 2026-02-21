@@ -89,6 +89,24 @@ export async function findUserByUsername(
   return rows[0] ?? null;
 }
 
+export async function searchUsers(
+  pool: Pool,
+  query: string,
+  excludeId?: number,
+  limit = 10,
+): Promise<AppUser[]> {
+  const pattern = `%${query}%`;
+  const { rows } = await pool.query<AppUser>(
+    `SELECT * FROM app_users
+     WHERE (username ILIKE $1 OR first_name ILIKE $1 OR last_name ILIKE $1)
+     ${excludeId ? "AND id != $3" : ""}
+     ORDER BY last_seen_at DESC
+     LIMIT $2`,
+    excludeId ? [pattern, limit, excludeId] : [pattern, limit],
+  );
+  return rows;
+}
+
 export async function createUser(
   pool: Pool,
   data: {

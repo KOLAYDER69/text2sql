@@ -122,8 +122,14 @@ export default function Home() {
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
   const [fixSuggestion, setFixSuggestion] = useState<{ suggestion: string; fixedSql?: string } | null>(null);
   const [fixLoading, setFixLoading] = useState(false);
-  const [sharing, setSharing] = useState(false);
-  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareModalUrl, setShareModalUrl] = useState<string | null>(null);
+  const [shareModalLoading, setShareModalLoading] = useState(false);
+  const [shareModalCopied, setShareModalCopied] = useState(false);
+  const [userSearch, setUserSearch] = useState("");
+  const [userSearchResults, setUserSearchResults] = useState<{ id: number; username: string | null; firstName: string; lastName: string | null }[]>([]);
+  const [notifySending, setNotifySending] = useState<number | null>(null);
+  const [notifiedUsers, setNotifiedUsers] = useState<Set<number>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -199,8 +205,9 @@ export default function Home() {
     setClarifying(true);
     setFixSuggestion(null);
     setFixLoading(false);
-    setShareUrl(null);
-    setSharing(false);
+    setShowShareModal(false);
+    setShareModalUrl(null);
+    setNotifiedUsers(new Set());
 
     const q = question.trim();
 
@@ -505,9 +512,17 @@ export default function Home() {
     }
   }
 
-  async function shareResult(result: QueryResult) {
-    if (sharing) return;
-    setSharing(true);
+  async function openShareModal() {
+    const result = getQueryContext();
+    if (!result || result.error || shareModalLoading) return;
+
+    setShareModalLoading(true);
+    setShowShareModal(true);
+    setShareModalCopied(false);
+    setUserSearch("");
+    setUserSearchResults([]);
+    setNotifiedUsers(new Set());
+
     try {
       const res = await fetch("/api/share", {
         method: "POST",
@@ -524,11 +539,60 @@ export default function Home() {
       });
       const data = await res.json();
       if (data.url) {
-        setShareUrl(data.url);
+        setShareModalUrl(data.url);
         navigator.clipboard.writeText(data.url);
+        setShareModalCopied(true);
+        setTimeout(() => setShareModalCopied(false), 2000);
       }
     } catch { /* ignore */ } finally {
-      setSharing(false);
+      setShareModalLoading(false);
+    }
+  }
+
+  function copyShareLink() {
+    if (!shareModalUrl) return;
+    navigator.clipboard.writeText(shareModalUrl);
+    setShareModalCopied(true);
+    setTimeout(() => setShareModalCopied(false), 2000);
+  }
+
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleUserSearch(q: string) {
+    setUserSearch(q);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (q.length < 2) {
+      setUserSearchResults([]);
+      return;
+    }
+    searchDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/users/search?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        if (data.users) setUserSearchResults(data.users);
+      } catch { /* ignore */ }
+    }, 300);
+  }
+
+  async function notifyUser(userId: number) {
+    const result = getQueryContext();
+    if (!result || !shareModalUrl || notifySending !== null) return;
+    setNotifySending(userId);
+    try {
+      const res = await fetch("/api/share/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          shareUrl: shareModalUrl,
+          recipientId: userId,
+          question: result.question,
+        }),
+      });
+      if (res.ok) {
+        setNotifiedUsers((prev) => new Set(prev).add(userId));
+      }
+    } catch { /* ignore */ } finally {
+      setNotifySending(null);
     }
   }
 
@@ -700,6 +764,18 @@ export default function Home() {
                 <svg width="16" height="16" viewBox="0 0 16 16" className="text-amber-400 vip-badge">
                   <path d="M8 1l2.2 4.5 5 .7-3.6 3.5.9 5L8 12.4 3.5 14.7l.9-5L.8 6.2l5-.7z" fill="currentColor" />
                 </svg>
+              )}
+              {getQueryContext() && !getQueryContext()?.error && (
+                <button
+                  onClick={openShareModal}
+                  className="text-white/30 hover:text-white/60 transition p-1.5 rounded-lg hover:bg-white/5"
+                  title={t("main.shareResults")}
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                    <circle cx="12" cy="3" r="2" /><circle cx="4" cy="8" r="2" /><circle cx="12" cy="13" r="2" />
+                    <path d="M5.7 9.1l4.6 2.8M10.3 4.1l-4.6 2.8" />
+                  </svg>
+                </button>
               )}
               <Link
                 href="/profile"
@@ -1002,26 +1078,6 @@ export default function Home() {
                         </div>
                       )}
 
-                      {/* Share button */}
-                      {!msg.result.error && msg.result.sql && (
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => shareResult(msg.result!)}
-                            disabled={sharing}
-                            className="flex items-center gap-1.5 text-xs text-white/30 hover:text-white/60 transition disabled:opacity-40"
-                          >
-                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                              <circle cx="12" cy="3" r="2" /><circle cx="4" cy="8" r="2" /><circle cx="12" cy="13" r="2" />
-                              <path d="M5.7 9.1l4.6 2.8M10.3 4.1l-4.6 2.8" />
-                            </svg>
-                            {sharing ? t("main.sharing") : shareUrl ? t("main.linkCopied") : t("main.share")}
-                          </button>
-                          {shareUrl && (
-                            <span className="text-xs text-emerald-400/60 truncate max-w-[200px]">{shareUrl}</span>
-                          )}
-                        </div>
-                      )}
-
                       {!msg.result.error && msg.result.rows && msg.result.rows.length === 0 && (
                         <div className="text-center text-white/30 py-8 text-sm">
                           {t("main.noResults")}
@@ -1123,6 +1179,117 @@ export default function Home() {
           </div>
         </form>
       </div>
+
+      {/* Share Modal */}
+      {showShareModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowShareModal(false)}>
+          <div className="bg-[#141414] border border-white/10 rounded-2xl max-w-md w-full max-h-[80vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
+              <h3 className="text-sm font-semibold">{t("main.shareResults")}</h3>
+              <button onClick={() => setShowShareModal(false)} className="text-white/30 hover:text-white transition p-1">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto max-h-[calc(80vh-60px)]">
+              {/* Link section */}
+              {shareModalLoading ? (
+                <div className="flex items-center gap-2 text-xs text-white/40">
+                  <div className="animate-spin h-3 w-3 border border-blue-500/30 border-t-blue-400 rounded-full" />
+                  {t("main.sharing")}
+                </div>
+              ) : shareModalUrl ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={shareModalUrl}
+                      className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white/60 font-mono truncate"
+                    />
+                    <button
+                      onClick={copyShareLink}
+                      className="px-3 py-2 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-500 transition shrink-0"
+                    >
+                      {shareModalCopied ? t("main.copied") : t("main.copyLink")}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Telegram section */}
+              {shareModalUrl && (
+                <>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-px bg-white/10" />
+                    <span className="text-xs text-white/30">{t("main.sendViaTelegram")}</span>
+                    <div className="flex-1 h-px bg-white/10" />
+                  </div>
+
+                  <input
+                    type="text"
+                    value={userSearch}
+                    onChange={(e) => handleUserSearch(e.target.value)}
+                    placeholder={t("main.searchUsers")}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500/50 transition"
+                    autoFocus
+                  />
+
+                  {userSearchResults.length > 0 && (
+                    <div className="space-y-1">
+                      {userSearchResults.map((u) => {
+                        const sent = notifiedUsers.has(u.id);
+                        const sending = notifySending === u.id;
+                        return (
+                          <button
+                            key={u.id}
+                            onClick={() => !sent && notifyUser(u.id)}
+                            disabled={sending || sent}
+                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition ${
+                              sent
+                                ? "bg-emerald-500/5 border border-emerald-500/20"
+                                : "hover:bg-white/5 border border-transparent"
+                            }`}
+                          >
+                            <div className="w-8 h-8 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-xs font-bold text-blue-400 shrink-0">
+                              {u.firstName?.[0]?.toUpperCase() ?? "?"}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">
+                                {u.firstName}{u.lastName ? ` ${u.lastName}` : ""}
+                              </p>
+                              {u.username && (
+                                <p className="text-xs text-white/30">@{u.username}</p>
+                              )}
+                            </div>
+                            {sent ? (
+                              <span className="text-xs text-emerald-400 flex items-center gap-1 shrink-0">
+                                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 8.5l3 3 7-7" /></svg>
+                                {t("main.sent")}
+                              </span>
+                            ) : sending ? (
+                              <span className="text-xs text-white/30 shrink-0">{t("main.sending")}</span>
+                            ) : (
+                              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-white/20 shrink-0">
+                                <path d="M2 8l5 4V9.5h4a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H7v2.5L2 8z" />
+                              </svg>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {userSearch.length >= 2 && userSearchResults.length === 0 && (
+                    <p className="text-xs text-white/20 text-center py-2">No users found</p>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

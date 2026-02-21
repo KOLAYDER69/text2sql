@@ -38,6 +38,7 @@ import {
   getUserFavorites,
   createSharedQuery,
   getSharedQuery,
+  searchUsers,
 } from "@querybot/engine";
 import type { FollowUpMessage, SchemaDescriptions } from "@querybot/engine";
 import {
@@ -86,6 +87,26 @@ async function getDescriptions(): Promise<SchemaDescriptions> {
 function invalidateDescriptions() {
   descriptionsCache = null;
   descriptionsCacheAt = 0;
+}
+
+// ─── Telegram Bot API helper ───
+
+async function sendTelegramMessage(chatId: string, text: string): Promise<boolean> {
+  if (!botToken) return false;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML", disable_web_page_preview: true }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 // ─── Express app ───
@@ -502,6 +523,75 @@ app.get("/api/share/:token", async (req, res) => {
       expiresAt: shared.expires_at,
     });
   } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
+});
+
+// ─── User search ───
+
+app.get("/api/users/search", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    const q = req.query.q as string;
+    if (!q || q.length < 2) {
+      res.json({ users: [] });
+      return;
+    }
+    const users = await searchUsers(appPool, q, session.userId, 10);
+    res.json({
+      users: users.map((u) => ({
+        id: u.id,
+        username: u.username,
+        firstName: u.first_name,
+        lastName: u.last_name,
+      })),
+    });
+  } catch {
+    res.json({ users: [] });
+  }
+});
+
+// ─── Share notify (Telegram) ───
+
+app.post("/api/share/notify", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    const { shareUrl, recipientId, question } = req.body as {
+      shareUrl: string;
+      recipientId: number;
+      question: string;
+    };
+
+    if (!shareUrl || !recipientId || !question) {
+      res.status(400).json({ error: "shareUrl, recipientId, and question are required" });
+      return;
+    }
+
+    const recipient = await findUserById(appPool, recipientId);
+    if (!recipient) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    const sender = await findUserById(appPool, session.userId);
+    const senderName = sender?.username
+      ? `@${sender.username}`
+      : sender?.first_name ?? "Someone";
+
+    const message =
+      `📊 <b>${escapeHtml(senderName)}</b> поделился запросом:\n\n` +
+      `<b>${escapeHtml(question)}</b>\n\n` +
+      `👉 <a href="${shareUrl}">Открыть результаты</a>`;
+
+    const ok = await sendTelegramMessage(recipient.telegram_id, message);
+    if (!ok) {
+      res.status(500).json({ error: "Failed to send message" });
+      return;
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("share/notify error:", err);
     res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
   }
 });

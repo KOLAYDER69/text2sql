@@ -157,6 +157,13 @@ const translations = {
   "main.share": { ru: "Поделиться", en: "Share" },
   "main.sharing": { ru: "Создаю ссылку...", en: "Creating link..." },
   "main.linkCopied": { ru: "Ссылка скопирована", en: "Link copied" },
+  "main.shareResults": { ru: "Поделиться результатами", en: "Share results" },
+  "main.copyLink": { ru: "Скопировать ссылку", en: "Copy link" },
+  "main.copied": { ru: "Скопировано", en: "Copied" },
+  "main.sendViaTelegram": { ru: "Отправить в Telegram", en: "Send via Telegram" },
+  "main.searchUsers": { ru: "Поиск по имени или username", en: "Search by name or username" },
+  "main.sent": { ru: "Отправлено", en: "Sent" },
+  "main.sending": { ru: "Отправка...", en: "Sending..." },
   "nav.favorites": { ru: "Избранное", en: "Favorites" },
   "nav.schedules": { ru: "Расписания", en: "Schedules" },
 
