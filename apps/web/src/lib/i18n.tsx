@@ -43,6 +43,8 @@ const translations = {
   "main.analysis": { ru: "Анализ", en: "Analysis" },
   "main.chart": { ru: "График", en: "Chart" },
   "main.refresh": { ru: "Обновить идеи", en: "Refresh ideas" },
+  "main.forYou": { ru: "Для вас", en: "For you" },
+  "main.popular": { ru: "Популярные запросы", en: "Popular queries" },
   "main.refreshing": { ru: "Генерирую...", en: "Generating..." },
   "main.followUp": { ru: "Задай уточняющий вопрос...", en: "Ask a follow-up question..." },
   "main.thinking": { ru: "Думаю...", en: "Thinking..." },

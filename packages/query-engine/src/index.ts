@@ -20,7 +20,7 @@ export type { FollowUpMessage } from "./analyze";
 export { formatTelegram, formatHTML } from "./format";
 export { buildSystemPrompt, buildSchemaText, buildRelationsText, buildDescriptionsMap } from "./prompt";
 export type { SchemaDescriptions } from "./prompt";
-export { generateSuggestions } from "./suggestions";
+export { generateSuggestions, generatePersonalSuggestions } from "./suggestions";
 export { buildChartConfig } from "./chart";
 export { translateQuestion } from "./translate";
 export { generateClarifications } from "./clarify";

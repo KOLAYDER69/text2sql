@@ -112,7 +112,8 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [clarifying, setClarifying] = useState(false);
   const [loadingStage, setLoadingStage] = useState(0);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [generalSuggestions, setGeneralSuggestions] = useState<string[]>([]);
+  const [personalSuggestions, setPersonalSuggestions] = useState<string[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [user, setUser] = useState<UserInfo | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -142,7 +143,8 @@ export default function Home() {
     fetch("/api/suggestions")
       .then((r) => r.json())
       .then((data) => {
-        if (data.suggestions) setSuggestions(data.suggestions);
+        if (data.general) setGeneralSuggestions(data.general);
+        if (data.personal) setPersonalSuggestions(data.personal);
       })
       .catch(() => {});
 
@@ -451,7 +453,7 @@ export default function Home() {
     try {
       const res = await fetch("/api/suggestions/refresh", { method: "POST" });
       const data = await res.json();
-      if (data.suggestions) setSuggestions(data.suggestions);
+      if (data.suggestions) setGeneralSuggestions(data.suggestions);
     } catch {
       // ignore
     } finally {
@@ -535,9 +537,9 @@ export default function Home() {
     t("suggestion.2"),
     t("suggestion.3"),
     t("suggestion.4"),
-    t("suggestion.5"),
-    t("suggestion.6"),
   ];
+
+  const displayGeneral = generalSuggestions.length > 0 ? generalSuggestions : defaultSuggestions;
 
   const hasMessages = messages.length > 0;
   const showEmpty = !hasMessages && !loading;
@@ -727,8 +729,32 @@ export default function Home() {
                 <p className="text-white/40 text-center mb-8 text-sm">
                   {t("main.subtitle")}
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {(suggestions.length > 0 ? suggestions : defaultSuggestions).map((q) => (
+                {/* Personal suggestions */}
+                {personalSuggestions.length > 0 && (
+                  <div className="mb-6">
+                    <p className="text-xs text-purple-400/50 uppercase tracking-wider font-medium mb-2 px-1">
+                      {t("main.forYou")}
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {personalSuggestions.map((q) => (
+                        <button
+                          key={q}
+                          onClick={() => runQuery(q)}
+                          className="text-left px-4 py-3 rounded-xl border border-purple-500/20 hover:border-purple-500/40 hover:bg-purple-500/5 transition text-sm text-white/60 hover:text-white"
+                        >
+                          {q}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* General suggestions */}
+                <p className="text-xs text-white/30 uppercase tracking-wider font-medium mb-2 px-1">
+                  {t("main.popular")}
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {displayGeneral.map((q) => (
                     <button
                       key={q}
                       onClick={() => runQuery(q)}

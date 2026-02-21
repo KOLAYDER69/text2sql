@@ -18,6 +18,7 @@ import {
   saveQueryHistory,
   getQueryHistory,
   generateSuggestions,
+  generatePersonalSuggestions,
   generateDescriptionSuggestions,
   saveSuggestions,
   getLatestSuggestions,
@@ -507,12 +508,35 @@ app.get("/api/share/:token", async (req, res) => {
 
 // ─── Suggestions ───
 
-app.get("/api/suggestions", requireAuth, async (_req, res) => {
-  const suggestions = await getLatestSuggestions(appPool);
-  res.json({
-    suggestions:
-      suggestions ?? ["Ask any question about your data in natural language"],
-  });
+app.get("/api/suggestions", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    const general = await getLatestSuggestions(appPool);
+
+    // Generate personal suggestions from user history (non-blocking, best-effort)
+    let personal: string[] = [];
+    try {
+      const history = await getQueryHistory(appPool, session.userId, 15);
+      const recentQuestions = history
+        .filter((h) => !h.error)
+        .map((h) => h.question);
+      if (recentQuestions.length > 0) {
+        const { tables } = await getSchema(pool);
+        personal = await generatePersonalSuggestions(tables, recentQuestions);
+      }
+    } catch {
+      // Personal suggestions are best-effort
+    }
+
+    res.json({
+      general: general ?? [],
+      personal,
+      // Keep backwards compatibility
+      suggestions: [...(general ?? []), ...personal],
+    });
+  } catch {
+    res.json({ general: [], personal: [], suggestions: [] });
+  }
 });
 
 app.post("/api/suggestions/refresh", requireAuth, async (_req, res) => {
