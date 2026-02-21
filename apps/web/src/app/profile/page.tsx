@@ -110,7 +110,7 @@ export default function ProfilePage() {
           >
             {t("nav.invites")}
           </Link>
-          {user?.role === "admin" && (
+          {(user?.role === "admin" || user?.canTrain) && (
             <Link
               href="/training"
               className="block px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition"

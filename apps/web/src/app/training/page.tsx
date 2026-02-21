@@ -33,6 +33,7 @@ type UserInfo = {
   username: string | null;
   role: string;
   isVip?: boolean;
+  canTrain?: boolean;
 };
 
 type SaveState = "idle" | "saving" | "saved";
@@ -521,7 +522,7 @@ export default function TrainingPage() {
   const [search, setSearch] = useState("");
   const [wizardOpen, setWizardOpen] = useState(false);
 
-  const isAdmin = user?.role === "admin";
+  const isAdmin = user?.role === "admin" || user?.canTrain === true;
 
   useEffect(() => {
     Promise.all([

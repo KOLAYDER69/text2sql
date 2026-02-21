@@ -94,6 +94,7 @@ type UserInfo = {
   username: string | null;
   role: string;
   isVip?: boolean;
+  canTrain?: boolean;
 };
 
 export default function Home() {
@@ -495,7 +496,7 @@ export default function Home() {
             </svg>
             {t("nav.invites")}
           </Link>
-          {user?.role === "admin" && (
+          {(user?.role === "admin" || user?.canTrain) && (
             <Link
               href="/training"
               className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition"
