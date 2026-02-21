@@ -1,10 +1,32 @@
 import type { TableSchema, InferredRelation } from "./types";
+import type { AppSchemaDescription } from "./app-db";
 
-export function buildSchemaText(tables: TableSchema[]): string {
+export type SchemaDescriptions = Map<string, string>;
+
+/** Convert DB rows to a lookup Map. Key: "table" or "table.column" */
+export function buildDescriptionsMap(rows: AppSchemaDescription[]): SchemaDescriptions {
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    const key = row.column_name
+      ? `${row.table_name}.${row.column_name}`
+      : row.table_name;
+    map.set(key, row.description);
+  }
+  return map;
+}
+
+export function buildSchemaText(
+  tables: TableSchema[],
+  descriptions?: SchemaDescriptions,
+): string {
   return tables
     .map((t) => {
       const rowInfo =
         t.rowCount != null && t.rowCount > 0 ? ` (~${t.rowCount.toLocaleString("en-US")} rows)` : "";
+      const tableDesc = descriptions?.get(t.name);
+      const tableHeader = tableDesc
+        ? `  ${t.name}${rowInfo}:  -- ${tableDesc}`
+        : `  ${t.name}${rowInfo}:`;
       const cols = t.columns
         .map((c) => {
           // Show actual enum type name instead of "USER-DEFINED"
@@ -14,10 +36,14 @@ export function buildSchemaText(tables: TableSchema[]): string {
           if (c.enum_values && c.enum_values.length > 0) {
             line += ` -- enum values: ${c.enum_values.map((v) => `'${v}'`).join(", ")}`;
           }
+          const colDesc = descriptions?.get(`${t.name}.${c.column_name}`);
+          if (colDesc) {
+            line += line.includes(" -- ") ? `  (${colDesc})` : `  -- ${colDesc}`;
+          }
           return line;
         })
         .join("\n");
-      return `  ${t.name}${rowInfo}:\n${cols}`;
+      return `${tableHeader}\n${cols}`;
     })
     .join("\n\n");
 }
@@ -33,8 +59,9 @@ export function buildRelationsText(relations: InferredRelation[]): string {
 export function buildSystemPrompt(
   tables: TableSchema[],
   relations: InferredRelation[] = [],
+  descriptions?: SchemaDescriptions,
 ): string {
-  const schemaText = buildSchemaText(tables);
+  const schemaText = buildSchemaText(tables, descriptions);
   const relationsText = buildRelationsText(relations);
   const today = new Date().toISOString().slice(0, 10);
 

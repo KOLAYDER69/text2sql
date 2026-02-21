@@ -1,6 +1,6 @@
 import { generateText } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
-import { buildSchemaText, buildRelationsText } from "./prompt";
+import { buildSchemaText, buildRelationsText, type SchemaDescriptions } from "./prompt";
 import type { TableSchema, InferredRelation } from "./types";
 
 export type ClarifyQuestion = {
@@ -18,9 +18,10 @@ export async function generateClarifications(
   lang: string,
   tables: TableSchema[],
   relations: InferredRelation[],
+  descriptions?: SchemaDescriptions,
 ): Promise<ClarifyResult> {
   try {
-    const schemaText = buildSchemaText(tables);
+    const schemaText = buildSchemaText(tables, descriptions);
     const relationsText = buildRelationsText(relations);
 
     const { text } = await generateText({

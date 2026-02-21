@@ -100,6 +100,9 @@ export default function InvitesPage() {
           <Link href="/invites" className="block px-3 py-2 rounded-lg text-sm text-white bg-white/5 font-medium">
             {t("nav.invites")}
           </Link>
+          <Link href="/training" className="block px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition">
+            {t("nav.training")}
+          </Link>
           <Link href="/profile" className="block px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition">
             {t("nav.profile")}
           </Link>

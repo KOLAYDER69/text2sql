@@ -336,3 +336,74 @@ export async function updateScheduleRun(
     [error ?? null, scheduleId],
   );
 }
+
+// ─── Schema Descriptions ───
+
+export type AppSchemaDescription = {
+  id: number;
+  table_name: string;
+  column_name: string | null;
+  description: string;
+  updated_by: number | null;
+  updated_at: string;
+};
+
+export async function getAllSchemaDescriptions(
+  pool: Pool,
+): Promise<AppSchemaDescription[]> {
+  const { rows } = await pool.query<AppSchemaDescription>(
+    "SELECT * FROM app_schema_descriptions ORDER BY table_name, column_name NULLS FIRST",
+  );
+  return rows;
+}
+
+export async function upsertSchemaDescription(
+  pool: Pool,
+  data: {
+    table_name: string;
+    column_name: string | null;
+    description: string;
+    updated_by: number | null;
+  },
+): Promise<AppSchemaDescription> {
+  if (data.column_name) {
+    // Column-level description — use partial index for column IS NOT NULL
+    const { rows } = await pool.query<AppSchemaDescription>(
+      `INSERT INTO app_schema_descriptions (table_name, column_name, description, updated_by, updated_at)
+       VALUES ($1, $2, $3, $4, now())
+       ON CONFLICT (table_name, column_name) WHERE column_name IS NOT NULL
+       DO UPDATE SET description = $3, updated_by = $4, updated_at = now()
+       RETURNING *`,
+      [data.table_name, data.column_name, data.description, data.updated_by],
+    );
+    return rows[0];
+  } else {
+    // Table-level description — use partial index for column IS NULL
+    const { rows } = await pool.query<AppSchemaDescription>(
+      `INSERT INTO app_schema_descriptions (table_name, column_name, description, updated_by, updated_at)
+       VALUES ($1, NULL, $2, $3, now())
+       ON CONFLICT (table_name) WHERE column_name IS NULL
+       DO UPDATE SET description = $2, updated_by = $3, updated_at = now()
+       RETURNING *`,
+      [data.table_name, data.description, data.updated_by],
+    );
+    return rows[0];
+  }
+}
+
+export async function deleteSchemaDescription(
+  pool: Pool,
+  tableName: string,
+  columnName: string | null,
+): Promise<boolean> {
+  const result = columnName
+    ? await pool.query(
+        "DELETE FROM app_schema_descriptions WHERE table_name = $1 AND column_name = $2",
+        [tableName, columnName],
+      )
+    : await pool.query(
+        "DELETE FROM app_schema_descriptions WHERE table_name = $1 AND column_name IS NULL",
+        [tableName],
+      );
+  return (result.rowCount ?? 0) > 0;
+}

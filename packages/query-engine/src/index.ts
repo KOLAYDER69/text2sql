@@ -7,6 +7,7 @@ import { analyzeResults } from "./analyze";
 import { formatTelegram, formatHTML } from "./format";
 import { buildChartConfig } from "./chart";
 import { translateQuestion } from "./translate";
+import type { SchemaDescriptions } from "./prompt";
 import type { QueryResponse } from "./types";
 
 export { getSchema, clearSchemaCache } from "./introspect";
@@ -16,7 +17,8 @@ export { executeSQL } from "./execute";
 export { analyzeResults, answerFollowUp } from "./analyze";
 export type { FollowUpMessage } from "./analyze";
 export { formatTelegram, formatHTML } from "./format";
-export { buildSystemPrompt, buildSchemaText, buildRelationsText } from "./prompt";
+export { buildSystemPrompt, buildSchemaText, buildRelationsText, buildDescriptionsMap } from "./prompt";
+export type { SchemaDescriptions } from "./prompt";
 export { generateSuggestions } from "./suggestions";
 export { buildChartConfig } from "./chart";
 export { translateQuestion } from "./translate";
@@ -45,6 +47,7 @@ export function createAppPool(appDatabaseUrl: string): pg.Pool {
 export async function query(
   pool: pg.Pool,
   question: string,
+  descriptions?: SchemaDescriptions,
 ): Promise<QueryResponse> {
   // 1. Get schema + translate question to English (in parallel)
   const [schema, translated] = await Promise.all([
@@ -54,7 +57,7 @@ export async function query(
   const { tables, relations } = schema;
 
   // 2. Generate SQL from English question (more reliable)
-  const sql = await generateSQL(translated.english, tables, relations);
+  const sql = await generateSQL(translated.english, tables, relations, descriptions);
 
   // 3. Validate
   const validation = validateSQL(sql);

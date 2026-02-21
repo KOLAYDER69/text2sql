@@ -100,6 +100,21 @@ const translations = {
   "profile.askQuestion": { ru: "Задать вопрос", en: "Ask a question" },
   "profile.manageAccess": { ru: "Управление доступом", en: "Manage access" },
 
+  // ─── Training page ───
+  "nav.training": { ru: "Обучение", en: "Training" },
+  "training.title": { ru: "Обучение схемы", en: "Schema Training" },
+  "training.subtitle": { ru: "Опишите таблицы и колонки — AI будет лучше понимать данные", en: "Describe tables and columns — AI will understand data better" },
+  "training.tablePlaceholder": { ru: "Описание таблицы...", en: "Table description..." },
+  "training.columnPlaceholder": { ru: "Описание колонки...", en: "Column description..." },
+  "training.saved": { ru: "Сохранено", en: "Saved" },
+  "training.saving": { ru: "Сохранение...", en: "Saving..." },
+  "training.columns": { ru: "колонок", en: "columns" },
+  "training.described": { ru: "описано", en: "described" },
+  "training.searchPlaceholder": { ru: "Поиск таблицы...", en: "Search tables..." },
+  "training.adminOnly": { ru: "Только администраторы могут редактировать описания", en: "Only admins can edit descriptions" },
+  "training.stats": { ru: "Покрытие", en: "Coverage" },
+  "training.tables": { ru: "таблиц", en: "tables" },
+
   // ─── Language ───
   "lang.ru": { ru: "Русский", en: "Russian" },
   "lang.en": { ru: "English", en: "English" },

@@ -30,7 +30,10 @@ import {
   createSchedule,
   getUserSchedules,
   deactivateSchedule,
+  getAllSchemaDescriptions,
+  buildDescriptionsMap,
 } from "@querybot/engine";
+import type { SchemaDescriptions } from "@querybot/engine";
 import { buildQuickChartUrl } from "./chart-url";
 import { Cron } from "croner";
 import { initScheduler, registerJob } from "./scheduler";
@@ -46,6 +49,22 @@ if (!appDatabaseUrl) throw new Error("APP_DATABASE_URL is required");
 const pool = createPool(databaseUrl);
 const appPool = createAppPool(appDatabaseUrl);
 const bot = new Bot(token);
+
+// ─── Descriptions cache (2 min) ───
+
+let descriptionsCache: SchemaDescriptions | null = null;
+let descriptionsCacheAt = 0;
+const DESCRIPTIONS_TTL = 2 * 60 * 1000;
+
+async function getDescriptions(): Promise<SchemaDescriptions> {
+  if (descriptionsCache && Date.now() - descriptionsCacheAt < DESCRIPTIONS_TTL) {
+    return descriptionsCache;
+  }
+  const rows = await getAllSchemaDescriptions(appPool);
+  descriptionsCache = buildDescriptionsMap(rows);
+  descriptionsCacheAt = Date.now();
+  return descriptionsCache;
+}
 
 const botUsername =
   process.env.NEXT_PUBLIC_TELEGRAM_BOT_NAME || "leadsaibot";
@@ -389,7 +408,8 @@ bot.command("schedule", async (ctx) => {
   await ctx.reply("Validating query...");
 
   // Validate by running the query
-  const result = await query(pool, question);
+  const descriptions = await getDescriptions();
+  const result = await query(pool, question, descriptions);
   if (result.error) {
     await ctx.reply(`Query error: ${result.error}`);
     return;
@@ -598,7 +618,8 @@ bot.callbackQuery(/^sched:(daily|weekly):(.+)$/, async (ctx) => {
   const cronExpr = CRON_PRESETS[interval];
 
   // We already know the query works — just need the SQL
-  const result = await query(pool, question);
+  const descriptions = await getDescriptions();
+  const result = await query(pool, question, descriptions);
   if (result.error) {
     await ctx.answerCallbackQuery({ text: "Ошибка запроса" });
     return;
@@ -662,6 +683,7 @@ async function processQuery(
     const { tables, relations } = schema;
 
     // Step 3: Check if clarification is needed
+    const descriptions = await getDescriptions();
     let clarifyResult = { questions: [] as ClarifyQuestion[] };
     try {
       clarifyResult = await generateClarifications(
@@ -670,6 +692,7 @@ async function processQuery(
         translated.lang,
         tables,
         relations,
+        descriptions,
       );
     } catch {
       // fail-safe: skip clarification
@@ -763,10 +786,13 @@ async function runQueryPipeline(
   const { tables, relations } = schema;
 
   // Translate enriched question for SQL generation
-  const translated = await translateQuestion(question);
+  const [translated, descriptions] = await Promise.all([
+    translateQuestion(question),
+    getDescriptions(),
+  ]);
 
   // Generate SQL from English question (more reliable)
-  const sql = await generateSQL(translated.english, tables, relations);
+  const sql = await generateSQL(translated.english, tables, relations, descriptions);
 
   await ctx.api.editMessageText(chatId, msgId, "⚡ Выполняю запрос...");
 

@@ -24,8 +24,12 @@ import {
   getUserSchedules,
   createSchedule,
   deactivateSchedule,
+  getAllSchemaDescriptions,
+  upsertSchemaDescription,
+  deleteSchemaDescription,
+  buildDescriptionsMap,
 } from "@querybot/engine";
-import type { FollowUpMessage } from "@querybot/engine";
+import type { FollowUpMessage, SchemaDescriptions } from "@querybot/engine";
 import {
   createSession,
   setSessionCookie,
@@ -52,6 +56,27 @@ if (!databaseUrl) throw new Error("DATABASE_URL is required");
 
 const appPool = createAppPool(appDatabaseUrl);
 const pool = createPool(databaseUrl);
+
+// ─── Descriptions cache (2 min) ───
+
+let descriptionsCache: SchemaDescriptions | null = null;
+let descriptionsCacheAt = 0;
+const DESCRIPTIONS_TTL = 2 * 60 * 1000;
+
+async function getDescriptions(): Promise<SchemaDescriptions> {
+  if (descriptionsCache && Date.now() - descriptionsCacheAt < DESCRIPTIONS_TTL) {
+    return descriptionsCache;
+  }
+  const rows = await getAllSchemaDescriptions(appPool);
+  descriptionsCache = buildDescriptionsMap(rows);
+  descriptionsCacheAt = Date.now();
+  return descriptionsCache;
+}
+
+function invalidateDescriptions() {
+  descriptionsCache = null;
+  descriptionsCacheAt = 0;
+}
 
 // ─── Express app ───
 
@@ -194,9 +219,10 @@ app.post("/api/query/clarify", requireAuth, async (req, res) => {
       return;
     }
 
-    const [schema, translated] = await Promise.all([
+    const [schema, translated, descriptions] = await Promise.all([
       getSchema(pool),
       translateQuestion(question.trim()),
+      getDescriptions(),
     ]);
 
     const result = await generateClarifications(
@@ -205,6 +231,7 @@ app.post("/api/query/clarify", requireAuth, async (req, res) => {
       translated.lang,
       schema.tables,
       schema.relations,
+      descriptions,
     );
 
     res.json({
@@ -230,7 +257,8 @@ app.post("/api/query", requireAuth, async (req, res) => {
       return;
     }
 
-    const result = await query(pool, question.trim());
+    const descriptions = await getDescriptions();
+    const result = await query(pool, question.trim(), descriptions);
 
     // Save to history (fire-and-forget)
     saveQueryHistory(appPool, {
@@ -376,7 +404,8 @@ app.post("/api/schedules", requireAuth, async (req, res) => {
     const cronExpr = CRON_PRESETS[interval] || interval;
 
     // Validate by running the query first
-    const result = await query(pool, question);
+    const descriptions = await getDescriptions();
+    const result = await query(pool, question, descriptions);
     if (result.error) {
       res
         .status(400)
@@ -416,6 +445,92 @@ app.delete("/api/schedules/:id", requireAuth, async (req, res) => {
   }
 
   res.json({ ok: true });
+});
+
+// ─── Schema & Descriptions (for training page) ───
+
+app.get("/api/schema", requireAuth, async (_req, res) => {
+  try {
+    const { tables } = await getSchema(pool);
+    res.json({ tables });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
+});
+
+app.get("/api/schema/descriptions", requireAuth, async (_req, res) => {
+  try {
+    const rows = await getAllSchemaDescriptions(appPool);
+    res.json({ descriptions: rows });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
+});
+
+app.put("/api/schema/descriptions", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    if (session.role !== "admin") {
+      res.status(403).json({ error: "Admin only" });
+      return;
+    }
+
+    const { table_name, column_name, description } = req.body as {
+      table_name: string;
+      column_name: string | null;
+      description: string;
+    };
+
+    if (!table_name || typeof description !== "string") {
+      res.status(400).json({ error: "table_name and description are required" });
+      return;
+    }
+
+    // Empty description = delete
+    if (!description.trim()) {
+      await deleteSchemaDescription(appPool, table_name, column_name ?? null);
+      invalidateDescriptions();
+      res.json({ ok: true, deleted: true });
+      return;
+    }
+
+    const row = await upsertSchemaDescription(appPool, {
+      table_name,
+      column_name: column_name ?? null,
+      description: description.trim(),
+      updated_by: session.userId,
+    });
+    invalidateDescriptions();
+    res.json({ ok: true, description: row });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
+});
+
+app.delete("/api/schema/descriptions", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    if (session.role !== "admin") {
+      res.status(403).json({ error: "Admin only" });
+      return;
+    }
+
+    const { table_name, column_name } = req.body as {
+      table_name: string;
+      column_name: string | null;
+    };
+
+    if (!table_name) {
+      res.status(400).json({ error: "table_name is required" });
+      return;
+    }
+
+    const ok = await deleteSchemaDescription(appPool, table_name, column_name ?? null);
+    invalidateDescriptions();
+    res.json({ ok, deleted: ok });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
 });
 
 // ─── Start ───

@@ -493,6 +493,17 @@ export default function Home() {
             </svg>
             {t("nav.invites")}
           </Link>
+          {user?.role === "admin" && (
+            <Link
+              href="/training"
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <path d="M2 4h12M2 8h8M2 12h10" />
+              </svg>
+              {t("nav.training")}
+            </Link>
+          )}
           <Link
             href="/profile"
             className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition"
