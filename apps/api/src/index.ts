@@ -576,8 +576,9 @@ app.get("/api/schema/descriptions", requireAuth, async (_req, res) => {
 app.put("/api/schema/descriptions", requireAuth, async (req, res) => {
   try {
     const session = getSession(req);
-    if (session.role !== "admin") {
-      res.status(403).json({ error: "Admin only" });
+    const me = await findUserById(appPool, session.userId);
+    if (session.role !== "admin" && !me?.can_train) {
+      res.status(403).json({ error: "Not allowed" });
       return;
     }
 
@@ -616,8 +617,9 @@ app.put("/api/schema/descriptions", requireAuth, async (req, res) => {
 app.delete("/api/schema/descriptions", requireAuth, async (req, res) => {
   try {
     const session = getSession(req);
-    if (session.role !== "admin") {
-      res.status(403).json({ error: "Admin only" });
+    const me = await findUserById(appPool, session.userId);
+    if (session.role !== "admin" && !me?.can_train) {
+      res.status(403).json({ error: "Not allowed" });
       return;
     }
 
@@ -644,8 +646,9 @@ app.delete("/api/schema/descriptions", requireAuth, async (req, res) => {
 app.post("/api/schema/suggest", requireAuth, async (req, res) => {
   try {
     const session = getSession(req);
-    if (session.role !== "admin") {
-      res.status(403).json({ error: "Admin only" });
+    const me = await findUserById(appPool, session.userId);
+    if (session.role !== "admin" && !me?.can_train) {
+      res.status(403).json({ error: "Not allowed" });
       return;
     }
 
