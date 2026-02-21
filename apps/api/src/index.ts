@@ -29,6 +29,8 @@ import {
   upsertSchemaDescription,
   deleteSchemaDescription,
   buildDescriptionsMap,
+  listInvitedUsers,
+  updateUserPermissions,
 } from "@querybot/engine";
 import type { FollowUpMessage, SchemaDescriptions } from "@querybot/engine";
 import {
@@ -133,6 +135,11 @@ app.get("/api/auth/check", async (req, res) => {
       username: user.username,
       firstName: user.first_name,
       role: user.role,
+      isVip: user.is_vip,
+      canQuery: user.can_query,
+      canInvite: user.can_invite,
+      canTrain: user.can_train,
+      canSchedule: user.can_schedule,
     });
 
     setSessionCookie(res, jwt);
@@ -172,6 +179,11 @@ app.post("/api/auth/telegram", async (req, res) => {
       username: user.username,
       firstName: user.first_name,
       role: user.role,
+      isVip: user.is_vip,
+      canQuery: user.can_query,
+      canInvite: user.can_invite,
+      canTrain: user.can_train,
+      canSchedule: user.can_schedule,
     });
 
     setSessionCookie(res, token);
@@ -182,6 +194,7 @@ app.post("/api/auth/telegram", async (req, res) => {
         username: user.username,
         firstName: user.first_name,
         role: user.role,
+        isVip: user.is_vip,
       },
     });
   } catch (err) {
@@ -205,6 +218,11 @@ app.get("/api/auth/me", requireAuth, (req, res) => {
       username: session.username,
       firstName: session.firstName,
       role: session.role,
+      isVip: session.isVip ?? false,
+      canQuery: session.canQuery ?? true,
+      canInvite: session.canInvite ?? true,
+      canTrain: session.canTrain ?? false,
+      canSchedule: session.canSchedule ?? true,
     },
   });
 });
@@ -446,6 +464,88 @@ app.delete("/api/schedules/:id", requireAuth, async (req, res) => {
   }
 
   res.json({ ok: true });
+});
+
+// ─── User management ───
+
+app.get("/api/users/invited", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    const users = await listInvitedUsers(appPool, session.userId);
+    res.json({
+      users: users.map((u) => ({
+        id: u.id,
+        username: u.username,
+        firstName: u.first_name,
+        lastName: u.last_name,
+        role: u.role,
+        isVip: u.is_vip,
+        canQuery: u.can_query,
+        canInvite: u.can_invite,
+        canTrain: u.can_train,
+        canSchedule: u.can_schedule,
+        createdAt: u.created_at,
+        lastSeenAt: u.last_seen_at,
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
+});
+
+app.put("/api/users/:id/permissions", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const targetId = parseInt(idParam, 10);
+    if (isNaN(targetId)) {
+      res.status(400).json({ error: "Invalid user ID" });
+      return;
+    }
+
+    // Only allow managing users you invited, or admins can manage anyone
+    const target = await findUserById(appPool, targetId);
+    if (!target) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    if (session.role !== "admin" && target.invited_by !== session.userId) {
+      res.status(403).json({ error: "Not allowed" });
+      return;
+    }
+
+    const { is_vip, can_query, can_invite, can_train, can_schedule } = req.body as {
+      is_vip: boolean;
+      can_query: boolean;
+      can_invite: boolean;
+      can_train: boolean;
+      can_schedule: boolean;
+    };
+
+    const updated = await updateUserPermissions(appPool, targetId, {
+      is_vip: !!is_vip,
+      can_query: can_query !== false,
+      can_invite: can_invite !== false,
+      can_train: !!can_train,
+      can_schedule: can_schedule !== false,
+    });
+
+    res.json({
+      user: {
+        id: updated.id,
+        username: updated.username,
+        firstName: updated.first_name,
+        isVip: updated.is_vip,
+        canQuery: updated.can_query,
+        canInvite: updated.can_invite,
+        canTrain: updated.can_train,
+        canSchedule: updated.can_schedule,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
 });
 
 // ─── Schema & Descriptions (for training page) ───

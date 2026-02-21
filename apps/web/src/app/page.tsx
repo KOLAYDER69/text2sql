@@ -93,6 +93,7 @@ type UserInfo = {
   firstName: string;
   username: string | null;
   role: string;
+  isVip?: boolean;
 };
 
 export default function Home() {
@@ -538,6 +539,11 @@ export default function Home() {
           </div>
           {user && (
             <div className="flex items-center gap-3">
+              {user.isVip && (
+                <svg width="16" height="16" viewBox="0 0 16 16" className="text-amber-400 vip-badge">
+                  <path d="M8 1l2.2 4.5 5 .7-3.6 3.5.9 5L8 12.4 3.5 14.7l.9-5L.8 6.2l5-.7z" fill="currentColor" />
+                </svg>
+              )}
               <Link
                 href="/profile"
                 className="text-sm text-white/50 hover:text-white transition"

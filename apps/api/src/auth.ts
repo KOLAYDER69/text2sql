@@ -12,6 +12,11 @@ export type SessionPayload = {
   username: string | null;
   firstName: string;
   role: "admin" | "user";
+  isVip: boolean;
+  canQuery: boolean;
+  canInvite: boolean;
+  canTrain: boolean;
+  canSchedule: boolean;
 };
 
 export async function createSession(payload: SessionPayload): Promise<string> {

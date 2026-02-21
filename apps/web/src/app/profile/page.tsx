@@ -10,6 +10,11 @@ type UserInfo = {
   firstName: string;
   username: string | null;
   role: string;
+  isVip: boolean;
+  canQuery: boolean;
+  canInvite: boolean;
+  canTrain: boolean;
+  canSchedule: boolean;
 };
 
 type HistoryItem = {
@@ -132,7 +137,14 @@ export default function ProfilePage() {
             &larr; {t("nav.back")}
           </Link>
           <h1 className="text-lg font-semibold">{t("profile.title")}</h1>
-          <LangSwitcher />
+          <div className="flex items-center gap-2">
+            {user?.isVip && (
+              <svg width="16" height="16" viewBox="0 0 16 16" className="text-amber-400 vip-badge">
+                <path d="M8 1l2.2 4.5 5 .7-3.6 3.5.9 5L8 12.4 3.5 14.7l.9-5L.8 6.2l5-.7z" fill="currentColor" />
+              </svg>
+            )}
+            <LangSwitcher />
+          </div>
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 lg:p-6">
@@ -146,11 +158,22 @@ export default function ProfilePage() {
               <div className="bg-white/[0.03] border border-white/10 rounded-xl p-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-xl font-bold text-blue-400">
+                    <div className={`w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold ${
+                      user?.isVip
+                        ? "bg-amber-500/20 border border-amber-500/30 text-amber-400"
+                        : "bg-blue-600/20 border border-blue-500/30 text-blue-400"
+                    }`}>
                       {user?.firstName?.[0]?.toUpperCase() ?? "?"}
                     </div>
                     <div>
-                      <h2 className="text-xl font-bold">{user?.firstName}</h2>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-xl font-bold">{user?.firstName}</h2>
+                        {user?.isVip && (
+                          <svg width="18" height="18" viewBox="0 0 16 16" className="text-amber-400 vip-badge">
+                            <path d="M8 1l2.2 4.5 5 .7-3.6 3.5.9 5L8 12.4 3.5 14.7l.9-5L.8 6.2l5-.7z" fill="currentColor" />
+                          </svg>
+                        )}
+                      </div>
                       {user?.username && (
                         <p className="text-white/40 text-sm">@{user.username}</p>
                       )}
@@ -167,6 +190,50 @@ export default function ProfilePage() {
                   </button>
                 </div>
               </div>
+
+              {/* Permissions card */}
+              {user && (
+                <div className="bg-white/[0.03] border border-white/10 rounded-xl p-5">
+                  <h3 className="text-sm text-white/40 uppercase tracking-wider font-medium mb-3">
+                    {t("perm.title")}
+                  </h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                    {([
+                      { key: "canQuery" as const, label: t("perm.query"), icon: "Q" },
+                      { key: "canInvite" as const, label: t("perm.invite"), icon: "I" },
+                      { key: "canTrain" as const, label: t("perm.train"), icon: "T" },
+                      { key: "canSchedule" as const, label: t("perm.schedule"), icon: "S" },
+                      { key: "isVip" as const, label: t("perm.vip"), icon: "\u2605" },
+                    ] as const).map(({ key, label, icon }) => {
+                      const granted = user[key];
+                      const isVipPerm = key === "isVip";
+                      return (
+                        <div
+                          key={key}
+                          className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border ${
+                            granted
+                              ? isVipPerm
+                                ? "bg-amber-500/5 border-amber-500/20"
+                                : "bg-emerald-500/5 border-emerald-500/20"
+                              : "bg-white/[0.02] border-white/5"
+                          }`}
+                        >
+                          <span className={`text-sm font-bold ${
+                            granted
+                              ? isVipPerm ? "text-amber-400" : "text-emerald-400"
+                              : "text-white/15"
+                          }`}>
+                            {icon}
+                          </span>
+                          <span className={`text-xs ${granted ? "text-white/60" : "text-white/20"}`}>
+                            {label}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Stats grid */}
               <div>

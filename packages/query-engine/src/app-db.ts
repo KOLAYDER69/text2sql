@@ -10,6 +10,11 @@ export type AppUser = {
   last_name: string | null;
   role: "admin" | "user";
   invited_by: number | null;
+  is_vip: boolean;
+  can_query: boolean;
+  can_invite: boolean;
+  can_train: boolean;
+  can_schedule: boolean;
   created_at: string;
   last_seen_at: string;
 };
@@ -117,6 +122,38 @@ export async function updateLastSeen(
     "UPDATE app_users SET last_seen_at = now() WHERE id = $1",
     [userId],
   );
+}
+
+export async function listInvitedUsers(
+  pool: Pool,
+  userId: number,
+): Promise<AppUser[]> {
+  const { rows } = await pool.query<AppUser>(
+    "SELECT * FROM app_users WHERE invited_by = $1 ORDER BY created_at DESC",
+    [userId],
+  );
+  return rows;
+}
+
+export async function updateUserPermissions(
+  pool: Pool,
+  userId: number,
+  perms: {
+    is_vip: boolean;
+    can_query: boolean;
+    can_invite: boolean;
+    can_train: boolean;
+    can_schedule: boolean;
+  },
+): Promise<AppUser> {
+  const { rows } = await pool.query<AppUser>(
+    `UPDATE app_users
+     SET is_vip = $2, can_query = $3, can_invite = $4, can_train = $5, can_schedule = $6
+     WHERE id = $1
+     RETURNING *`,
+    [userId, perms.is_vip, perms.can_query, perms.can_invite, perms.can_train, perms.can_schedule],
+  );
+  return rows[0];
 }
 
 // ─── Invites ───

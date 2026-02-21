@@ -15,18 +15,87 @@ type Invite = {
   created_at: string;
 };
 
+type InvitedUser = {
+  id: number;
+  username: string | null;
+  firstName: string;
+  lastName: string | null;
+  role: string;
+  isVip: boolean;
+  canQuery: boolean;
+  canInvite: boolean;
+  canTrain: boolean;
+  canSchedule: boolean;
+  createdAt: string;
+  lastSeenAt: string;
+};
+
+function PermToggle({
+  checked,
+  onChange,
+  label,
+  golden,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  golden?: boolean;
+}) {
+  return (
+    <button
+      onClick={() => onChange(!checked)}
+      className="flex items-center gap-1.5 group"
+      title={label}
+    >
+      <div
+        className={`w-7 h-4 rounded-full transition-colors relative ${
+          checked
+            ? golden
+              ? "bg-amber-500/60"
+              : "bg-emerald-500/60"
+            : "bg-white/10"
+        }`}
+      >
+        <div
+          className={`absolute top-0.5 w-3 h-3 rounded-full transition-all ${
+            checked
+              ? golden
+                ? "left-3.5 bg-amber-300"
+                : "left-3.5 bg-emerald-300"
+              : "left-0.5 bg-white/40"
+          }`}
+        />
+      </div>
+      <span className={`text-[10px] ${
+        checked
+          ? golden ? "text-amber-300/70" : "text-white/50"
+          : "text-white/20"
+      }`}>
+        {label}
+      </span>
+    </button>
+  );
+}
+
 export default function InvitesPage() {
   const { t } = useI18n();
   const [invites, setInvites] = useState<Invite[]>([]);
+  const [invitedUsers, setInvitedUsers] = useState<InvitedUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [newInvite, setNewInvite] = useState<{ code: string; deepLink: string } | null>(null);
+  const [userVip, setUserVip] = useState(false);
 
   const botName = "leadsaibot";
 
   useEffect(() => {
     loadInvites();
+    loadInvitedUsers();
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((data) => { if (data?.user?.isVip) setUserVip(true); })
+      .catch(() => {});
   }, []);
 
   function loadInvites() {
@@ -43,6 +112,50 @@ export default function InvitesPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+  }
+
+  function loadInvitedUsers() {
+    fetch("/api/users/invited")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.users) setInvitedUsers(data.users);
+      })
+      .catch(() => {});
+  }
+
+  async function updatePermission(
+    userId: number,
+    field: keyof Pick<InvitedUser, "isVip" | "canQuery" | "canInvite" | "canTrain" | "canSchedule">,
+    value: boolean,
+  ) {
+    // Optimistic update
+    setInvitedUsers((prev) =>
+      prev.map((u) => (u.id === userId ? { ...u, [field]: value } : u)),
+    );
+
+    const user = invitedUsers.find((u) => u.id === userId);
+    if (!user) return;
+
+    const perms = {
+      is_vip: field === "isVip" ? value : user.isVip,
+      can_query: field === "canQuery" ? value : user.canQuery,
+      can_invite: field === "canInvite" ? value : user.canInvite,
+      can_train: field === "canTrain" ? value : user.canTrain,
+      can_schedule: field === "canSchedule" ? value : user.canSchedule,
+    };
+
+    try {
+      await fetch(`/api/users/${userId}/permissions`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(perms),
+      });
+    } catch {
+      // Revert on error
+      setInvitedUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, [field]: !value } : u)),
+      );
+    }
   }
 
   async function createInvite() {
@@ -119,7 +232,14 @@ export default function InvitesPage() {
             &larr; {t("nav.back")}
           </Link>
           <h1 className="text-lg font-semibold">{t("invites.title")}</h1>
-          <LangSwitcher />
+          <div className="flex items-center gap-2">
+            {userVip && (
+              <svg width="16" height="16" viewBox="0 0 16 16" className="text-amber-400 vip-badge">
+                <path d="M8 1l2.2 4.5 5 .7-3.6 3.5.9 5L8 12.4 3.5 14.7l.9-5L.8 6.2l5-.7z" fill="currentColor" />
+              </svg>
+            )}
+            <LangSwitcher />
+          </div>
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 lg:p-6">
@@ -271,6 +391,90 @@ export default function InvitesPage() {
                       })}
                     </tbody>
                   </table>
+                </div>
+              </div>
+            )}
+
+            {/* My Users section */}
+            {invitedUsers.length > 0 && (
+              <div className="space-y-3">
+                <h2 className="text-lg font-bold">{t("users.title")}</h2>
+                <div className="space-y-2">
+                  {invitedUsers.map((user) => (
+                    <div
+                      key={user.id}
+                      className="bg-white/[0.03] border border-white/10 rounded-xl p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        {/* User info */}
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
+                            user.isVip
+                              ? "bg-amber-500/20 border border-amber-500/30 text-amber-400"
+                              : "bg-blue-600/20 border border-blue-500/30 text-blue-400"
+                          }`}>
+                            {user.firstName?.[0]?.toUpperCase() ?? "?"}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-sm truncate">
+                                {user.firstName}
+                                {user.lastName ? ` ${user.lastName}` : ""}
+                              </span>
+                              {user.isVip && (
+                                <svg width="14" height="14" viewBox="0 0 16 16" className="text-amber-400 vip-badge shrink-0">
+                                  <path d="M8 1l2.2 4.5 5 .7-3.6 3.5.9 5L8 12.4 3.5 14.7l.9-5L.8 6.2l5-.7z" fill="currentColor" />
+                                </svg>
+                              )}
+                            </div>
+                            {user.username && (
+                              <p className="text-xs text-white/30">@{user.username}</p>
+                            )}
+                            <p className="text-[10px] text-white/20 mt-0.5">
+                              {t("users.colJoined")}: {new Date(user.createdAt).toLocaleDateString("ru")}
+                              {" · "}
+                              {t("users.lastSeen")}: {new Date(user.lastSeenAt).toLocaleDateString("ru")}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Role badge */}
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 capitalize shrink-0">
+                          {user.role}
+                        </span>
+                      </div>
+
+                      {/* Permission toggles */}
+                      <div className="flex flex-wrap gap-x-4 gap-y-2 mt-3 pt-3 border-t border-white/5">
+                        <PermToggle
+                          checked={user.canQuery}
+                          onChange={(v) => updatePermission(user.id, "canQuery", v)}
+                          label={t("perm.query")}
+                        />
+                        <PermToggle
+                          checked={user.canInvite}
+                          onChange={(v) => updatePermission(user.id, "canInvite", v)}
+                          label={t("perm.invite")}
+                        />
+                        <PermToggle
+                          checked={user.canTrain}
+                          onChange={(v) => updatePermission(user.id, "canTrain", v)}
+                          label={t("perm.train")}
+                        />
+                        <PermToggle
+                          checked={user.canSchedule}
+                          onChange={(v) => updatePermission(user.id, "canSchedule", v)}
+                          label={t("perm.schedule")}
+                        />
+                        <PermToggle
+                          checked={user.isVip}
+                          onChange={(v) => updatePermission(user.id, "isVip", v)}
+                          label={t("perm.vip")}
+                          golden
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

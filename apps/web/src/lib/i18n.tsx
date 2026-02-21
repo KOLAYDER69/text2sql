@@ -127,6 +127,25 @@ const translations = {
   "training.wizardEmpty": { ru: "Нет незаполненных описаний", en: "No empty descriptions" },
   "training.wizardSkip": { ru: "Пропустить", en: "Skip" },
 
+  // ─── User management (invites page) ───
+  "users.title": { ru: "Мои пользователи", en: "My Users" },
+  "users.empty": { ru: "Пока нет приглашённых пользователей", en: "No invited users yet" },
+  "users.emptyHint": { ru: "Создайте инвайт и отправьте ссылку", en: "Create an invite and share the link" },
+  "users.colName": { ru: "Имя", en: "Name" },
+  "users.colJoined": { ru: "Дата", en: "Joined" },
+  "users.colPermissions": { ru: "Разрешения", en: "Permissions" },
+  "users.lastSeen": { ru: "Был", en: "Seen" },
+
+  // ─── Permissions ───
+  "perm.query": { ru: "Запросы", en: "Queries" },
+  "perm.invite": { ru: "Инвайты", en: "Invites" },
+  "perm.train": { ru: "Обучение", en: "Training" },
+  "perm.schedule": { ru: "Расписание", en: "Schedules" },
+  "perm.vip": { ru: "VIP", en: "VIP" },
+  "perm.title": { ru: "Разрешения", en: "Permissions" },
+  "perm.granted": { ru: "Разрешено", en: "Granted" },
+  "perm.denied": { ru: "Запрещено", en: "Denied" },
+
   // ─── Language ───
   "lang.ru": { ru: "Русский", en: "Russian" },
   "lang.en": { ru: "English", en: "English" },

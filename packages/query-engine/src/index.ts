@@ -37,10 +37,11 @@ export function createPool(databaseUrl: string): pg.Pool {
 }
 
 export function createAppPool(appDatabaseUrl: string): pg.Pool {
+  const isLocalhost = appDatabaseUrl.includes("@localhost") || appDatabaseUrl.includes("@127.0.0.1");
   return new pg.Pool({
     connectionString: appDatabaseUrl,
     max: 5,
-    ssl: { rejectUnauthorized: false },
+    ssl: isLocalhost ? false : { rejectUnauthorized: false },
   });
 }
 
