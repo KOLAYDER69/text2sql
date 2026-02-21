@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useI18n, LangSwitcher } from "@/lib/i18n";
 import { QueryChart } from "./chart";
+import { HoloLogo } from "./holo-logo";
 
 function formatAnalysis(text: string): string {
   // 1. Preserve safe HTML tags from AI (<b>, <i>, <code>) with placeholders
@@ -533,7 +534,7 @@ export default function Home() {
                 <path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
               </svg>
             </button>
-            <h1 className="text-lg font-semibold">QueryBot</h1>
+            <HoloLogo size="sm" />
           </div>
           {user && (
             <div className="flex items-center gap-3">

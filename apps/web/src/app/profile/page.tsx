@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useI18n, LangSwitcher } from "@/lib/i18n";
+import { HoloLogo } from "../holo-logo";
 
 type UserInfo = {
   id: number;
@@ -86,10 +87,9 @@ export default function ProfilePage() {
         <div className="p-3">
           <Link
             href="/"
-            className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border border-white/10 hover:bg-white/5 transition text-sm font-medium"
+            className="w-full flex items-center justify-center rounded-lg border border-white/10 hover:bg-white/5 transition"
           >
-            <span className="text-lg leading-none">&larr;</span>
-            QueryBot
+            <HoloLogo size="sm" />
           </Link>
         </div>
         <nav className="px-3 space-y-1 flex-1">

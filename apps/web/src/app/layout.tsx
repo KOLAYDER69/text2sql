@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "QueryBot",
-  description: "Natural language database queries powered by AI",
+  title: "Leads AI",
+  description: "Ask & Get data — AI-powered database analytics",
 };
 
 export default function RootLayout({
