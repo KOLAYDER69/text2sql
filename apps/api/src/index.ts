@@ -5,6 +5,10 @@ import {
   createPool,
   createAppPool,
   query,
+  answerFollowUp,
+  getSchema,
+  translateQuestion,
+  generateClarifications,
   createAuthToken,
   checkAuthToken,
   findUserByTelegramId,
@@ -12,7 +16,6 @@ import {
   updateLastSeen,
   saveQueryHistory,
   getQueryHistory,
-  getSchema,
   generateSuggestions,
   saveSuggestions,
   getLatestSuggestions,
@@ -22,6 +25,7 @@ import {
   createSchedule,
   deactivateSchedule,
 } from "@querybot/engine";
+import type { FollowUpMessage } from "@querybot/engine";
 import {
   createSession,
   setSessionCookie,
@@ -179,6 +183,41 @@ app.get("/api/auth/me", requireAuth, (req, res) => {
   });
 });
 
+// ─── Clarify ───
+
+app.post("/api/query/clarify", requireAuth, async (req, res) => {
+  try {
+    const { question } = req.body;
+
+    if (!question || typeof question !== "string") {
+      res.status(400).json({ error: "question is required" });
+      return;
+    }
+
+    const [schema, translated] = await Promise.all([
+      getSchema(pool),
+      translateQuestion(question.trim()),
+    ]);
+
+    const result = await generateClarifications(
+      question.trim(),
+      translated.english,
+      translated.lang,
+      schema.tables,
+      schema.relations,
+    );
+
+    res.json({
+      questions: result.questions,
+      skip: result.questions.length === 0,
+    });
+  } catch (err) {
+    console.error("clarify error:", err);
+    // Fail-safe: never block the user
+    res.json({ questions: [], skip: true });
+  }
+});
+
 // ─── Query ───
 
 app.post("/api/query", requireAuth, async (req, res) => {
@@ -205,6 +244,48 @@ app.post("/api/query", requireAuth, async (req, res) => {
     }).catch((err) => console.error("Failed to save history:", err));
 
     res.json(result);
+  } catch (err) {
+    res.status(500).json({
+      error: err instanceof Error ? err.message : "Internal error",
+    });
+  }
+});
+
+// ─── Follow-up ───
+
+app.post("/api/query/followup", requireAuth, async (req, res) => {
+  try {
+    const { followUp, messages, context } = req.body as {
+      followUp: string;
+      messages: FollowUpMessage[];
+      context: {
+        question: string;
+        sql: string;
+        rows: Record<string, unknown>[];
+        fields: string[];
+        rowCount: number;
+      };
+    };
+
+    if (!followUp || typeof followUp !== "string") {
+      res.status(400).json({ error: "followUp is required" });
+      return;
+    }
+
+    if (!context?.question || !context?.sql) {
+      res.status(400).json({ error: "context with question and sql is required" });
+      return;
+    }
+
+    const { tables } = await getSchema(pool);
+    const answer = await answerFollowUp(
+      followUp.trim(),
+      messages || [],
+      context,
+      tables,
+    );
+
+    res.json({ answer });
   } catch (err) {
     res.status(500).json({
       error: err instanceof Error ? err.message : "Internal error",

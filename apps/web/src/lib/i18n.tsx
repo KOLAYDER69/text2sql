@@ -44,6 +44,13 @@ const translations = {
   "main.chart": { ru: "График", en: "Chart" },
   "main.refresh": { ru: "Обновить идеи", en: "Refresh ideas" },
   "main.refreshing": { ru: "Генерирую...", en: "Generating..." },
+  "main.followUp": { ru: "Задай уточняющий вопрос...", en: "Ask a follow-up question..." },
+  "main.thinking": { ru: "Думаю...", en: "Thinking..." },
+  "main.clarifying": { ru: "Анализирую вопрос...", en: "Analyzing question..." },
+  "main.clarification": { ru: "Уточнение", en: "Clarification" },
+  "main.skip": { ru: "Пропустить", en: "Skip" },
+  "main.confirm": { ru: "Подтвердить", en: "Confirm" },
+  "main.skipped": { ru: "Пропущено", en: "Skipped" },
 
   // ─── Default suggestions (fallback) ───
   "suggestion.1": { ru: "Покажи топ-5 товаров по цене", en: "Show top 5 products by price" },

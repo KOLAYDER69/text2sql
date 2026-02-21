@@ -13,12 +13,15 @@ export { getSchema, clearSchemaCache } from "./introspect";
 export { generateSQL } from "./generate";
 export { validateSQL } from "./validate";
 export { executeSQL } from "./execute";
-export { analyzeResults } from "./analyze";
+export { analyzeResults, answerFollowUp } from "./analyze";
+export type { FollowUpMessage } from "./analyze";
 export { formatTelegram, formatHTML } from "./format";
-export { buildSystemPrompt } from "./prompt";
+export { buildSystemPrompt, buildSchemaText, buildRelationsText } from "./prompt";
 export { generateSuggestions } from "./suggestions";
 export { buildChartConfig } from "./chart";
 export { translateQuestion } from "./translate";
+export { generateClarifications } from "./clarify";
+export type { ClarifyQuestion, ClarifyResult } from "./clarify";
 export * from "./types";
 export * from "./app-db";
 

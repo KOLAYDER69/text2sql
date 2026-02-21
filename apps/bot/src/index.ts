@@ -13,6 +13,7 @@ import {
   generateSuggestions,
   buildChartConfig,
   translateQuestion,
+  generateClarifications,
   findUserByTelegramId,
   findUserById,
   createUser,
@@ -475,6 +476,113 @@ function storeQuestion(question: string): string {
   return hash;
 }
 
+// ─── Clarification state ───
+
+type ClarifyQuestion = { question: string; options: string[] };
+
+type PendingClarification = {
+  question: string;
+  questions: ClarifyQuestion[];
+  answers: Record<number, string>;
+  currentIndex: number;
+  statusMsgId: number;
+  chatId: number;
+  schema: { tables: Awaited<ReturnType<typeof getSchema>>["tables"]; relations: Awaited<ReturnType<typeof getSchema>>["relations"] };
+  user: ReturnType<typeof getUser>;
+};
+
+const pendingClarify = new Map<number, PendingClarification>();
+
+const clarifyOptionStore = new Map<string, string>();
+
+function storeClarifyOption(option: string): string {
+  const hash = crypto.createHash("md5").update(option).digest("hex").slice(0, 8);
+  clarifyOptionStore.set(hash, option);
+  setTimeout(() => clarifyOptionStore.delete(hash), 5 * 60 * 1000);
+  return hash;
+}
+
+function buildClarifyKeyboard(q: ClarifyQuestion, qIndex: number): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  for (const opt of q.options) {
+    const hash = storeClarifyOption(opt);
+    kb.text(opt.length > 40 ? opt.slice(0, 37) + "..." : opt, `cq:${qIndex}:${hash}`).row();
+  }
+  kb.text("⏭ Пропустить", "cq:skip");
+  return kb;
+}
+
+// Callback handler for clarification answers
+bot.callbackQuery(/^cq:(\d+):(.+)$/, async (ctx) => {
+  const chatId = ctx.callbackQuery.message?.chat.id;
+  if (!chatId) return;
+
+  const pending = pendingClarify.get(chatId);
+  if (!pending) {
+    await ctx.answerCallbackQuery({ text: "Уточнение устарело" });
+    return;
+  }
+
+  const qIndex = parseInt(ctx.match[1], 10);
+  const hash = ctx.match[2];
+  const option = clarifyOptionStore.get(hash);
+  if (!option) {
+    await ctx.answerCallbackQuery({ text: "Вариант устарел" });
+    return;
+  }
+
+  // Record answer
+  pending.answers[qIndex] = option;
+  await ctx.answerCallbackQuery({ text: option });
+
+  // If more questions, show next
+  const nextIndex = qIndex + 1;
+  if (nextIndex < pending.questions.length) {
+    pending.currentIndex = nextIndex;
+    const nextQ = pending.questions[nextIndex];
+    const kb = buildClarifyKeyboard(nextQ, nextIndex);
+    try {
+      await ctx.api.editMessageText(
+        pending.chatId,
+        pending.statusMsgId,
+        `❓ ${nextQ.question}`,
+        { reply_markup: kb },
+      );
+    } catch {
+      const msg = await ctx.reply(`❓ ${nextQ.question}`, { reply_markup: kb });
+      pending.statusMsgId = msg.message_id;
+    }
+  } else {
+    // All answered — build enriched question and continue
+    const context = pending.questions
+      .map((q, i) => (pending.answers[i] ? `${q.question}: ${pending.answers[i]}` : null))
+      .filter(Boolean)
+      .join(". ");
+    const enriched = context
+      ? `${pending.question}. Контекст: ${context}.`
+      : pending.question;
+
+    pendingClarify.delete(chatId);
+    await continueQuery(ctx, enriched, pending.question, pending.schema, pending.user);
+  }
+});
+
+// Callback handler for clarification skip
+bot.callbackQuery("cq:skip", async (ctx) => {
+  const chatId = ctx.callbackQuery.message?.chat.id;
+  if (!chatId) return;
+
+  const pending = pendingClarify.get(chatId);
+  if (!pending) {
+    await ctx.answerCallbackQuery({ text: "Уточнение устарело" });
+    return;
+  }
+
+  await ctx.answerCallbackQuery({ text: "Пропущено" });
+  pendingClarify.delete(chatId);
+  await continueQuery(ctx, pending.question, pending.question, pending.schema, pending.user);
+});
+
 // Callback handler for schedule buttons
 bot.callbackQuery(/^sched:(daily|weekly):(.+)$/, async (ctx) => {
   const interval = ctx.match[1];
@@ -541,7 +649,7 @@ async function processQuery(
   const user = getUser(ctx);
 
   // Step 1: Status message
-  const status = await ctx.reply("🧠 Генерирую SQL...");
+  const status = await ctx.reply("🧠 Анализирую вопрос...");
   const chatId = status.chat.id;
   const msgId = status.message_id;
 
@@ -553,85 +661,47 @@ async function processQuery(
     ]);
     const { tables, relations } = schema;
 
-    // Step 3: Generate SQL from English question (more reliable)
-    const sql = await generateSQL(translated.english, tables, relations);
+    // Step 3: Check if clarification is needed
+    let clarifyResult = { questions: [] as ClarifyQuestion[] };
+    try {
+      clarifyResult = await generateClarifications(
+        question,
+        translated.english,
+        translated.lang,
+        tables,
+        relations,
+      );
+    } catch {
+      // fail-safe: skip clarification
+    }
 
-    await ctx.api.editMessageText(chatId, msgId, "⚡ Выполняю запрос...");
+    if (clarifyResult.questions.length > 0) {
+      // Show first clarification question
+      const pending: PendingClarification = {
+        question,
+        questions: clarifyResult.questions,
+        answers: {},
+        currentIndex: 0,
+        statusMsgId: msgId,
+        chatId,
+        schema: { tables, relations },
+        user,
+      };
+      pendingClarify.set(chatId, pending);
+      // Auto-expire after 5 minutes
+      setTimeout(() => pendingClarify.delete(chatId), 5 * 60 * 1000);
 
-    // Step 3: Validate
-    const validation = validateSQL(sql);
-    if (!validation.valid) {
-      await saveQueryHistory(appPool, {
-        user_id: user.id, platform: "telegram", question, sql,
-        row_count: 0, execution_ms: 0, error: validation.error,
+      const firstQ = clarifyResult.questions[0];
+      const kb = buildClarifyKeyboard(firstQ, 0);
+      await ctx.api.editMessageText(chatId, msgId, `❓ ${firstQ.question}`, {
+        reply_markup: kb,
       });
-      await ctx.api.editMessageText(chatId, msgId, `❌ ${validation.error}`);
       return;
     }
 
-    // Step 4: Execute
-    const result = await executeSQL(pool, sql);
-
-    // Save to history (fire-and-forget)
-    saveQueryHistory(appPool, {
-      user_id: user.id, platform: "telegram", question, sql: result.sql,
-      row_count: result.rowCount, execution_ms: result.executionMs, error: undefined,
-    }).catch(() => {});
-
-    await ctx.api.editMessageText(chatId, msgId, "💡 Анализирую данные...");
-
-    // Step 5: Analyze with AI
-    let analysis = "";
-    try {
-      analysis = await analyzeResults(question, result.sql, result.rows, result.fields, result.rowCount, tables);
-    } catch {
-      // non-critical
-    }
-
-    // Step 6: Delete status message
-    try {
-      await ctx.api.editMessageText(chatId, msgId, "✅ Готово");
-    } catch { /* ignore */ }
-
-    // Step 7: Send beautiful response
-    // Analysis first (main answer)
-    if (analysis) {
-      const cleanAnalysis = mdToTelegramHtml(analysis);
-      await sendSafe(ctx, `💡 <b>Ответ:</b>\n\n${cleanAnalysis}`);
-    }
-
-    // Data table
-    const formatted = formatTelegram({
-      sql: result.sql, rows: result.rows, rowCount: result.rowCount,
-      fields: result.fields, executionMs: result.executionMs,
-    });
-    await sendSafe(ctx, formatted);
-
-    // Chart image (if data is suitable)
-    const chart = buildChartConfig(result.fields, result.rows);
-    if (chart) {
-      try {
-        const chartUrl = buildQuickChartUrl(chart);
-        console.log("Chart URL length:", chartUrl.length, "type:", chart.type);
-        await ctx.api.sendPhoto(chatId, chartUrl);
-      } catch (err) {
-        console.error("Chart send failed:", err instanceof Error ? err.message : err);
-      }
-    } else {
-      console.log("No chart: fields=", result.fields, "rows=", result.rowCount);
-    }
-
-    // SQL (collapsed, at the end)
-    const sqlBlock = `<blockquote expandable>🔍 SQL:\n<pre>${escapeHtml(result.sql)}</pre></blockquote>`;
-
-    // Schedule buttons
-    const hash = storeQuestion(question);
-    const scheduleKeyboard = new InlineKeyboard()
-      .text("📋 Ежедневно", `sched:daily:${hash}`)
-      .text("📋 Еженедельно", `sched:weekly:${hash}`);
-
-    await sendSafe(ctx, sqlBlock, scheduleKeyboard);
-
+    // No clarification needed — continue pipeline
+    await ctx.api.editMessageText(chatId, msgId, "🧠 Генерирую SQL...");
+    await runQueryPipeline(ctx, question, question, schema, user, chatId, msgId);
   } catch (err) {
     try {
       await ctx.api.editMessageText(
@@ -642,6 +712,137 @@ async function processQuery(
       await ctx.reply("❌ Ошибка: " + (err instanceof Error ? err.message : "Unknown"));
     }
   }
+}
+
+async function continueQuery(
+  ctx: {
+    reply: (text: string, opts?: Record<string, unknown>) => Promise<{ chat: { id: number }; message_id: number }>;
+    api: {
+      editMessageText: (chatId: number, msgId: number, text: string, opts?: Record<string, unknown>) => Promise<unknown>;
+      sendPhoto: (chatId: number | string, photo: string, other?: Record<string, unknown>) => Promise<unknown>;
+    };
+  },
+  enrichedQuestion: string,
+  originalQuestion: string,
+  schema: { tables: Awaited<ReturnType<typeof getSchema>>["tables"]; relations: Awaited<ReturnType<typeof getSchema>>["relations"] },
+  user: ReturnType<typeof getUser>,
+): Promise<void> {
+  const status = await ctx.reply("🧠 Генерирую SQL...");
+  const chatId = status.chat.id;
+  const msgId = status.message_id;
+
+  try {
+    await runQueryPipeline(ctx, enrichedQuestion, originalQuestion, schema, user, chatId, msgId);
+  } catch (err) {
+    try {
+      await ctx.api.editMessageText(
+        chatId, msgId,
+        "❌ Ошибка: " + (err instanceof Error ? err.message : "Unknown"),
+      );
+    } catch {
+      await ctx.reply("❌ Ошибка: " + (err instanceof Error ? err.message : "Unknown"));
+    }
+  }
+}
+
+async function runQueryPipeline(
+  ctx: {
+    reply: (text: string, opts?: Record<string, unknown>) => Promise<{ chat: { id: number }; message_id: number }>;
+    api: {
+      editMessageText: (chatId: number, msgId: number, text: string, opts?: Record<string, unknown>) => Promise<unknown>;
+      sendPhoto: (chatId: number | string, photo: string, other?: Record<string, unknown>) => Promise<unknown>;
+    };
+  },
+  question: string,
+  originalQuestion: string,
+  schema: { tables: Awaited<ReturnType<typeof getSchema>>["tables"]; relations: Awaited<ReturnType<typeof getSchema>>["relations"] },
+  user: ReturnType<typeof getUser>,
+  chatId: number,
+  msgId: number,
+): Promise<void> {
+  const { tables, relations } = schema;
+
+  // Translate enriched question for SQL generation
+  const translated = await translateQuestion(question);
+
+  // Generate SQL from English question (more reliable)
+  const sql = await generateSQL(translated.english, tables, relations);
+
+  await ctx.api.editMessageText(chatId, msgId, "⚡ Выполняю запрос...");
+
+  // Validate
+  const validation = validateSQL(sql);
+  if (!validation.valid) {
+    await saveQueryHistory(appPool, {
+      user_id: user.id, platform: "telegram", question: originalQuestion, sql,
+      row_count: 0, execution_ms: 0, error: validation.error,
+    });
+    await ctx.api.editMessageText(chatId, msgId, `❌ ${validation.error}`);
+    return;
+  }
+
+  // Execute
+  const result = await executeSQL(pool, sql);
+
+  // Save to history (fire-and-forget)
+  saveQueryHistory(appPool, {
+    user_id: user.id, platform: "telegram", question: originalQuestion, sql: result.sql,
+    row_count: result.rowCount, execution_ms: result.executionMs, error: undefined,
+  }).catch(() => {});
+
+  await ctx.api.editMessageText(chatId, msgId, "💡 Анализирую данные...");
+
+  // Analyze with AI
+  let analysis = "";
+  try {
+    analysis = await analyzeResults(originalQuestion, result.sql, result.rows, result.fields, result.rowCount, tables);
+  } catch {
+    // non-critical
+  }
+
+  // Delete status message
+  try {
+    await ctx.api.editMessageText(chatId, msgId, "✅ Готово");
+  } catch { /* ignore */ }
+
+  // Send beautiful response
+  // Analysis first (main answer)
+  if (analysis) {
+    const cleanAnalysis = mdToTelegramHtml(analysis);
+    await sendSafe(ctx, `💡 <b>Ответ:</b>\n\n${cleanAnalysis}`);
+  }
+
+  // Data table
+  const formatted = formatTelegram({
+    sql: result.sql, rows: result.rows, rowCount: result.rowCount,
+    fields: result.fields, executionMs: result.executionMs,
+  });
+  await sendSafe(ctx, formatted);
+
+  // Chart image (if data is suitable)
+  const chart = buildChartConfig(result.fields, result.rows);
+  if (chart) {
+    try {
+      const chartUrl = buildQuickChartUrl(chart);
+      console.log("Chart URL length:", chartUrl.length, "type:", chart.type);
+      await ctx.api.sendPhoto(chatId, chartUrl);
+    } catch (err) {
+      console.error("Chart send failed:", err instanceof Error ? err.message : err);
+    }
+  } else {
+    console.log("No chart: fields=", result.fields, "rows=", result.rowCount);
+  }
+
+  // SQL (collapsed, at the end)
+  const sqlBlock = `<blockquote expandable>🔍 SQL:\n<pre>${escapeHtml(result.sql)}</pre></blockquote>`;
+
+  // Schedule buttons
+  const hash = storeQuestion(originalQuestion);
+  const scheduleKeyboard = new InlineKeyboard()
+    .text("📋 Ежедневно", `sched:daily:${hash}`)
+    .text("📋 Еженедельно", `sched:weekly:${hash}`);
+
+  await sendSafe(ctx, sqlBlock, scheduleKeyboard);
 }
 
 /** Send message safely, splitting if >4096 chars */

@@ -64,6 +64,20 @@ type QueryResult = {
   chart?: ChartConfig;
 };
 
+type ClarifyQuestion = { question: string; options: string[] };
+
+type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+  result?: QueryResult;
+  clarification?: {
+    questions: ClarifyQuestion[];
+    answers: Record<number, string>;
+    resolved: boolean;
+    originalQuestion: string;
+  };
+};
+
 type HistoryItem = {
   id: number;
   question: string;
@@ -82,9 +96,10 @@ type UserInfo = {
 
 export default function Home() {
   const { t } = useI18n();
-  const [result, setResult] = useState<QueryResult | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [clarifying, setClarifying] = useState(false);
   const [loadingStage, setLoadingStage] = useState(0);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -92,6 +107,12 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [refreshingSuggestions, setRefreshingSuggestions] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom when messages change or loading changes
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -120,12 +141,66 @@ export default function Home() {
       .catch(() => {});
   }
 
+  // Get the first assistant message with a result (the original query context)
+  function getQueryContext(): QueryResult | undefined {
+    return messages.find((m) => m.role === "assistant" && m.result)?.result;
+  }
+
   async function runQuery(question: string) {
-    if (!question.trim() || loading) return;
+    if (!question.trim() || loading || clarifying) return;
     setInput("");
+    setClarifying(true);
+
+    const q = question.trim();
+
+    // Add user message
+    setMessages((prev) => [...prev, { role: "user", content: q }]);
+
+    try {
+      const res = await fetch("/api/query/clarify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q }),
+      });
+
+      if (res.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+
+      const data = await res.json();
+
+      if (data.skip || !data.questions || data.questions.length === 0) {
+        // No clarification needed — execute immediately
+        setClarifying(false);
+        await executeQuery(q);
+      } else {
+        // Show clarification card
+        setClarifying(false);
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: "",
+            clarification: {
+              questions: data.questions,
+              answers: {},
+              resolved: false,
+              originalQuestion: q,
+            },
+          },
+        ]);
+      }
+    } catch {
+      setClarifying(false);
+      // Fail-safe: just execute without clarification
+      await executeQuery(q);
+    }
+  }
+
+  async function executeQuery(question: string) {
     setLoading(true);
     setLoadingStage(0);
-    setResult(null);
 
     // Cycle through stages while waiting
     const stageTimer = setInterval(() => {
@@ -136,7 +211,7 @@ export default function Home() {
       const res = await fetch("/api/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: question.trim() }),
+        body: JSON.stringify({ question }),
       });
 
       if (res.status === 401) {
@@ -145,31 +220,166 @@ export default function Home() {
       }
 
       const data = await res.json();
-      setResult({ ...data, question: question.trim() });
+      const result: QueryResult = { ...data, question };
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: result.analysis || result.error || "",
+          result,
+        },
+      ]);
       loadHistory();
     } catch {
-      setResult({
-        question: question.trim(),
-        sql: "",
-        rows: [],
-        fields: [],
-        rowCount: 0,
-        executionMs: 0,
-        error: t("main.connectionError"),
-      });
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: t("main.connectionError"),
+          result: {
+            question,
+            sql: "",
+            rows: [],
+            fields: [],
+            rowCount: 0,
+            executionMs: 0,
+            error: t("main.connectionError"),
+          },
+        },
+      ]);
     } finally {
       clearInterval(stageTimer);
       setLoading(false);
     }
   }
 
+  function handleClarifyAnswer(msgIndex: number, questionIndex: number, option: string) {
+    setMessages((prev) =>
+      prev.map((msg, i) => {
+        if (i !== msgIndex || !msg.clarification) return msg;
+        return {
+          ...msg,
+          clarification: {
+            ...msg.clarification,
+            answers: { ...msg.clarification.answers, [questionIndex]: option },
+          },
+        };
+      }),
+    );
+  }
+
+  async function handleClarifyConfirm(msgIndex: number) {
+    const msg = messages[msgIndex];
+    if (!msg?.clarification) return;
+
+    const { originalQuestion, questions, answers } = msg.clarification;
+
+    // Build enriched question
+    const context = questions
+      .map((q, i) => (answers[i] ? `${q.question}: ${answers[i]}` : null))
+      .filter(Boolean)
+      .join(". ");
+    const enriched = context
+      ? `${originalQuestion}. Контекст: ${context}.`
+      : originalQuestion;
+
+    // Mark as resolved
+    setMessages((prev) =>
+      prev.map((m, i) =>
+        i === msgIndex && m.clarification
+          ? { ...m, clarification: { ...m.clarification, resolved: true } }
+          : m,
+      ),
+    );
+
+    await executeQuery(enriched);
+  }
+
+  async function handleClarifySkip(msgIndex: number) {
+    const msg = messages[msgIndex];
+    if (!msg?.clarification) return;
+
+    // Mark as resolved
+    setMessages((prev) =>
+      prev.map((m, i) =>
+        i === msgIndex && m.clarification
+          ? { ...m, clarification: { ...m.clarification, resolved: true } }
+          : m,
+      ),
+    );
+
+    await executeQuery(msg.clarification.originalQuestion);
+  }
+
+  async function sendFollowUp(question: string) {
+    if (!question.trim() || loading) return;
+    setInput("");
+    setLoading(true);
+
+    // Add user message
+    setMessages((prev) => [...prev, { role: "user", content: question.trim() }]);
+
+    const ctx = getQueryContext();
+    if (!ctx) return;
+
+    // Build message history for the API (exclude the first user+assistant pair which is the original query)
+    const chatHistory = messages
+      .filter((m) => !m.result) // only text-only messages (follow-ups)
+      .map((m) => ({ role: m.role, content: m.content }));
+
+    try {
+      const res = await fetch("/api/query/followup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          followUp: question.trim(),
+          messages: chatHistory,
+          context: {
+            question: ctx.question,
+            sql: ctx.sql,
+            rows: ctx.rows,
+            fields: ctx.fields,
+            rowCount: ctx.rowCount,
+          },
+        }),
+      });
+
+      if (res.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+
+      const data = await res.json();
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: data.answer || data.error || "No response" },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: t("main.connectionError") },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    runQuery(input);
+    if (!input.trim() || clarifying) return;
+
+    // If we already have a query context, this is a follow-up
+    const hasContext = getQueryContext();
+    if (hasContext) {
+      sendFollowUp(input);
+    } else {
+      runQuery(input);
+    }
   }
 
   function handleNewQuery() {
-    setResult(null);
+    setMessages([]);
     setInput("");
     setSidebarOpen(false);
     inputRef.current?.focus();
@@ -177,6 +387,7 @@ export default function Home() {
 
   function handleHistoryClick(item: HistoryItem) {
     setSidebarOpen(false);
+    setMessages([]);
     runQuery(item.question);
   }
 
@@ -208,7 +419,8 @@ export default function Home() {
     t("suggestion.6"),
   ];
 
-  const showEmpty = !result && !loading;
+  const hasMessages = messages.length > 0;
+  const showEmpty = !hasMessages && !loading;
 
   return (
     <div className="flex h-screen bg-[#0a0a0a] text-white">
@@ -373,8 +585,221 @@ export default function Home() {
             </div>
           )}
 
-          {/* Loading state */}
-          {loading && (
+          {/* Chat messages */}
+          {hasMessages && (
+            <div className="p-4 lg:p-6 max-w-5xl mx-auto space-y-4">
+              {messages.map((msg, i) => (
+                <div key={i}>
+                  {msg.role === "user" ? (
+                    /* User message — right-aligned bubble */
+                    <div className="flex justify-end">
+                      <div className="bg-blue-600 rounded-2xl rounded-br-md px-4 py-2.5 max-w-[80%]">
+                        <p className="text-sm">{msg.content}</p>
+                      </div>
+                    </div>
+                  ) : msg.clarification ? (
+                    /* Clarification card */
+                    msg.clarification.resolved ? (
+                      <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl px-4 py-3">
+                        <p className="text-xs text-amber-400/60 font-medium">
+                          {t("main.clarification")}
+                          {Object.keys(msg.clarification.answers).length === 0 && (
+                            <span className="ml-2 text-white/30">— {t("main.skipped")}</span>
+                          )}
+                        </p>
+                        {Object.keys(msg.clarification.answers).length > 0 && (
+                          <p className="text-sm text-white/50 mt-1">
+                            {msg.clarification.questions
+                              .map((q, qi) =>
+                                msg.clarification!.answers[qi]
+                                  ? `${q.question} → ${msg.clarification!.answers[qi]}`
+                                  : null,
+                              )
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-5">
+                        <p className="text-xs text-amber-400/60 uppercase tracking-wider font-medium mb-3">
+                          {t("main.clarification")}
+                        </p>
+                        <div className="space-y-4">
+                          {msg.clarification.questions.map((q, qi) => (
+                            <div key={qi}>
+                              <p className="text-sm text-white/80 mb-2">{q.question}</p>
+                              <div className="flex flex-wrap gap-2">
+                                {q.options.map((opt) => (
+                                  <button
+                                    key={opt}
+                                    onClick={() => handleClarifyAnswer(i, qi, opt)}
+                                    className={`px-3 py-1.5 rounded-lg text-sm transition ${
+                                      msg.clarification!.answers[qi] === opt
+                                        ? "bg-amber-500/20 border border-amber-500/40 text-amber-200"
+                                        : "bg-white/5 border border-white/10 text-white/60 hover:border-white/25 hover:text-white"
+                                    }`}
+                                  >
+                                    {opt}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex gap-2 mt-4">
+                          <button
+                            onClick={() => handleClarifyConfirm(i)}
+                            className="px-4 py-2 rounded-lg text-sm font-medium bg-amber-600 hover:bg-amber-500 transition"
+                          >
+                            {t("main.confirm")}
+                          </button>
+                          <button
+                            onClick={() => handleClarifySkip(i)}
+                            className="px-4 py-2 rounded-lg text-sm text-white/40 hover:text-white/70 hover:bg-white/5 transition"
+                          >
+                            {t("main.skip")}
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  ) : msg.result ? (
+                    /* Assistant message with full query result */
+                    <div className="space-y-4">
+                      {msg.result.error && (
+                        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-red-400 text-sm">
+                          {msg.result.error}
+                        </div>
+                      )}
+
+                      {msg.result.analysis && (
+                        <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-5">
+                          <p className="text-xs text-blue-400/60 uppercase tracking-wider font-medium mb-2">{t("main.analysis")}</p>
+                          <div
+                            className="text-sm text-white/80 leading-relaxed analysis-content"
+                            dangerouslySetInnerHTML={{ __html: formatAnalysis(msg.result.analysis) }}
+                          />
+                        </div>
+                      )}
+
+                      {msg.result.rows && msg.result.rows.length > 0 && msg.result.fields && (
+                        <div className="bg-white/[0.03] border border-white/10 rounded-xl overflow-hidden">
+                          <div className="px-4 py-2 border-b border-white/10">
+                            <span className="text-xs text-white/40">
+                              {msg.result.rowCount} {t("main.rows")} · {msg.result.executionMs}{t("main.ms")}
+                            </span>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="border-b border-white/10 bg-white/[0.02]">
+                                  {msg.result.fields.map((f) => (
+                                    <th
+                                      key={f}
+                                      className="text-left px-4 py-2.5 text-white/50 font-medium text-xs uppercase tracking-wider whitespace-nowrap sticky top-0 bg-[#111]"
+                                    >
+                                      {f}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {msg.result.rows.map((row, ri) => (
+                                  <tr
+                                    key={ri}
+                                    className={`
+                                      border-b border-white/5 hover:bg-white/[0.04] transition
+                                      ${ri % 2 === 1 ? "bg-white/[0.015]" : ""}
+                                    `}
+                                  >
+                                    {msg.result!.fields.map((f) => (
+                                      <td
+                                        key={f}
+                                        className="px-4 py-2 font-mono text-sm whitespace-nowrap"
+                                      >
+                                        {String(row[f] ?? "")}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                      {msg.result.chart && <QueryChart config={msg.result.chart} />}
+
+                      {msg.result.sql && (
+                        <div className="bg-white/[0.03] border border-white/10 rounded-xl overflow-hidden">
+                          <div className="px-4 py-2 border-b border-white/10 flex items-center justify-between">
+                            <span className="text-xs text-white/40 uppercase tracking-wider font-medium">SQL</span>
+                          </div>
+                          <pre className="p-4 text-sm font-mono text-emerald-400 overflow-x-auto whitespace-pre-wrap">
+                            {msg.result.sql}
+                          </pre>
+                        </div>
+                      )}
+
+                      {!msg.result.error && msg.result.rows && msg.result.rows.length === 0 && (
+                        <div className="text-center text-white/30 py-8 text-sm">
+                          {t("main.noResults")}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* Assistant text-only message (follow-up answer) */
+                    <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-5">
+                      <div
+                        className="text-sm text-white/80 leading-relaxed analysis-content"
+                        dangerouslySetInnerHTML={{ __html: formatAnalysis(msg.content) }}
+                      />
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Clarifying indicator */}
+              {clarifying && (
+                <div className="flex items-center gap-3 py-4">
+                  <div className="animate-spin h-4 w-4 border-2 border-amber-500/30 border-t-amber-400 rounded-full" />
+                  <p className="text-white/40 text-sm">{t("main.clarifying")}</p>
+                </div>
+              )}
+
+              {/* Loading indicator inside chat */}
+              {loading && !getQueryContext() && (
+                <div className="flex flex-col items-center gap-4 py-8">
+                  <div className="animate-spin h-6 w-6 border-2 border-blue-500/30 border-t-blue-400 rounded-full" />
+                  <div className="text-center">
+                    <p className="text-white/60 text-sm font-medium">
+                      {loadingStage === 0 && t("main.stageSQL")}
+                      {loadingStage === 1 && t("main.stageExecute")}
+                      {loadingStage === 2 && t("main.stageAnalyze")}
+                    </p>
+                    <div className="flex items-center gap-1.5 mt-2 justify-center">
+                      {[0, 1, 2].map((s) => (
+                        <div key={s} className={`h-1 w-8 rounded-full transition-all duration-500 ${s <= loadingStage ? "bg-blue-500" : "bg-white/10"}`} />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Follow-up loading indicator */}
+              {loading && getQueryContext() && (
+                <div className="flex items-center gap-3 py-4">
+                  <div className="animate-spin h-4 w-4 border-2 border-blue-500/30 border-t-blue-400 rounded-full" />
+                  <p className="text-white/40 text-sm">{t("main.thinking")}</p>
+                </div>
+              )}
+
+              <div ref={chatEndRef} />
+            </div>
+          )}
+
+          {/* Initial loading (no messages yet) */}
+          {loading && !hasMessages && (
             <div className="flex items-center justify-center h-full">
               <div className="flex flex-col items-center gap-4">
                 <div className="animate-spin h-6 w-6 border-2 border-blue-500/30 border-t-blue-400 rounded-full" />
@@ -393,96 +818,6 @@ export default function Home() {
               </div>
             </div>
           )}
-
-          {/* Query result */}
-          {result && !loading && (
-            <div className="p-4 lg:p-6 max-w-5xl mx-auto space-y-4">
-              <div className="text-white/50 text-sm">
-                {result.question}
-              </div>
-
-              {result.error && (
-                <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-red-400 text-sm">
-                  {result.error}
-                </div>
-              )}
-
-              {result.analysis && (
-                <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-5">
-                  <p className="text-xs text-blue-400/60 uppercase tracking-wider font-medium mb-2">{t("main.analysis")}</p>
-                  <div
-                    className="text-sm text-white/80 leading-relaxed analysis-content"
-                    dangerouslySetInnerHTML={{ __html: formatAnalysis(result.analysis) }}
-                  />
-                </div>
-              )}
-
-              {result.rows && result.rows.length > 0 && result.fields && (
-                <div className="bg-white/[0.03] border border-white/10 rounded-xl overflow-hidden">
-                  <div className="px-4 py-2 border-b border-white/10">
-                    <span className="text-xs text-white/40">
-                      {result.rowCount} {t("main.rows")} · {result.executionMs}{t("main.ms")}
-                    </span>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-white/10 bg-white/[0.02]">
-                          {result.fields.map((f) => (
-                            <th
-                              key={f}
-                              className="text-left px-4 py-2.5 text-white/50 font-medium text-xs uppercase tracking-wider whitespace-nowrap sticky top-0 bg-[#111]"
-                            >
-                              {f}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {result.rows.map((row, ri) => (
-                          <tr
-                            key={ri}
-                            className={`
-                              border-b border-white/5 hover:bg-white/[0.04] transition
-                              ${ri % 2 === 1 ? "bg-white/[0.015]" : ""}
-                            `}
-                          >
-                            {result.fields.map((f) => (
-                              <td
-                                key={f}
-                                className="px-4 py-2 font-mono text-sm whitespace-nowrap"
-                              >
-                                {String(row[f] ?? "")}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {result.chart && <QueryChart config={result.chart} />}
-
-              {result.sql && (
-                <div className="bg-white/[0.03] border border-white/10 rounded-xl overflow-hidden">
-                  <div className="px-4 py-2 border-b border-white/10 flex items-center justify-between">
-                    <span className="text-xs text-white/40 uppercase tracking-wider font-medium">SQL</span>
-                  </div>
-                  <pre className="p-4 text-sm font-mono text-emerald-400 overflow-x-auto whitespace-pre-wrap">
-                    {result.sql}
-                  </pre>
-                </div>
-              )}
-
-              {!result.error && result.rows && result.rows.length === 0 && (
-                <div className="text-center text-white/30 py-8 text-sm">
-                  {t("main.noResults")}
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         {/* Input — fixed at bottom */}
@@ -493,13 +828,13 @@ export default function Home() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={t("main.placeholder")}
+              placeholder={hasMessages ? t("main.followUp") : t("main.placeholder")}
               className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25 transition text-sm"
-              disabled={loading}
+              disabled={loading || clarifying}
             />
             <button
               type="submit"
-              disabled={loading || !input.trim()}
+              disabled={loading || clarifying || !input.trim()}
               className="bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed px-5 py-3 rounded-xl font-medium transition text-sm"
             >
               {t("main.send")}

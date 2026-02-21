@@ -1,6 +1,6 @@
 import type { TableSchema, InferredRelation } from "./types";
 
-function buildSchemaText(tables: TableSchema[]): string {
+export function buildSchemaText(tables: TableSchema[]): string {
   return tables
     .map((t) => {
       const rowInfo =
@@ -22,7 +22,7 @@ function buildSchemaText(tables: TableSchema[]): string {
     .join("\n\n");
 }
 
-function buildRelationsText(relations: InferredRelation[]): string {
+export function buildRelationsText(relations: InferredRelation[]): string {
   if (relations.length === 0) return "";
   const lines = relations.map(
     (r) => `  ${r.fromTable}.${r.fromColumn} → ${r.toTable}.${r.toColumn}`,
