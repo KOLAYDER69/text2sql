@@ -799,22 +799,16 @@ async function runQueryPipeline(
   // Validate
   const validation = validateSQL(sql);
   if (!validation.valid) {
-    await saveQueryHistory(appPool, {
+    saveQueryHistory(appPool, {
       user_id: user.id, platform: "telegram", question: originalQuestion, sql,
       row_count: 0, execution_ms: 0, error: validation.error,
-    });
+    }).catch(() => {});
     await ctx.api.editMessageText(chatId, msgId, `❌ ${validation.error}`);
     return;
   }
 
   // Execute
   const result = await executeSQL(pool, sql);
-
-  // Save to history (fire-and-forget)
-  saveQueryHistory(appPool, {
-    user_id: user.id, platform: "telegram", question: originalQuestion, sql: result.sql,
-    row_count: result.rowCount, execution_ms: result.executionMs, error: undefined,
-  }).catch(() => {});
 
   await ctx.api.editMessageText(chatId, msgId, "💡 Анализирую данные...");
 
@@ -862,13 +856,28 @@ async function runQueryPipeline(
   // SQL (collapsed, at the end)
   const sqlBlock = `<blockquote expandable>🔍 SQL:\n<pre>${escapeHtml(result.sql)}</pre></blockquote>`;
 
-  // Schedule buttons
+  // Save to history with full results
+  let historyId: number | undefined;
+  try {
+    historyId = await saveQueryHistory(appPool, {
+      user_id: user.id, platform: "telegram", question: originalQuestion, sql: result.sql,
+      row_count: result.rowCount, execution_ms: result.executionMs, error: undefined,
+      rows_json: result.rows, fields: result.fields, analysis: analysis || undefined,
+      chart_config: chart || undefined,
+    });
+  } catch { /* ignore */ }
+
+  // Schedule buttons + "Open on web" button
   const hash = storeQuestion(originalQuestion);
-  const scheduleKeyboard = new InlineKeyboard()
+  const keyboard = new InlineKeyboard()
     .text("📋 Ежедневно", `sched:daily:${hash}`)
     .text("📋 Еженедельно", `sched:weekly:${hash}`);
 
-  await sendSafe(ctx, sqlBlock, scheduleKeyboard);
+  if (historyId) {
+    keyboard.row().url("📊 Открыть на сайте", `${webUrl}/?load=${historyId}`);
+  }
+
+  await sendSafe(ctx, sqlBlock, keyboard);
 }
 
 /** Send message safely, splitting if >4096 chars */

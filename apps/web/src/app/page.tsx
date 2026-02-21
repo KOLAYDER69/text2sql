@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useI18n, LangSwitcher } from "@/lib/i18n";
 import { QueryChart } from "./chart";
@@ -63,6 +64,23 @@ type QueryResult = {
   error?: string;
   analysis?: string;
   chart?: ChartConfig;
+  historyId?: number;
+};
+
+type TeamChatMessage = {
+  id: number;
+  userId: number;
+  username: string | null;
+  firstName: string;
+  message: string;
+  sharePreview: { historyId: number; question: string; analysisSnippet: string } | null;
+  createdAt: string;
+};
+
+type OnlineUser = {
+  id: number;
+  username: string | null;
+  firstName: string;
 };
 
 type ClarifyQuestion = { question: string; options: string[] };
@@ -97,16 +115,27 @@ type FavoriteItem = {
 };
 
 type UserInfo = {
+  id?: number;
   firstName: string;
   username: string | null;
   role: string;
   isVip?: boolean;
   canTrain?: boolean;
   canSchedule?: boolean;
+  hasSeenOnboarding?: boolean;
 };
 
 export default function Home() {
+  return (
+    <Suspense>
+      <HomeInner />
+    </Suspense>
+  );
+}
+
+function HomeInner() {
   const { t } = useI18n();
+  const searchParams = useSearchParams();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -130,19 +159,41 @@ export default function Home() {
   const [userSearchResults, setUserSearchResults] = useState<{ id: number; username: string | null; firstName: string; lastName: string | null }[]>([]);
   const [notifySending, setNotifySending] = useState<number | null>(null);
   const [notifiedUsers, setNotifiedUsers] = useState<Set<number>>(new Set());
+  // Chat panel state
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<TeamChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
+  // Onboarding
+  const [onboardingStep, setOnboardingStep] = useState(-1); // -1 = not showing
+  // History loading
+  const [loadingHistoryId, setLoadingHistoryId] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatPanelEndRef = useRef<HTMLDivElement>(null);
+  const lastChatFetchRef = useRef<string | null>(null);
 
   // Auto-scroll to bottom when messages change or loading changes
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
+  // Auto-scroll chat panel
+  useEffect(() => {
+    chatPanelEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
       .then((data) => {
-        if (data.user) setUser(data.user);
+        if (data.user) {
+          setUser(data.user);
+          // Show onboarding for new users
+          if (data.user.hasSeenOnboarding === false) {
+            setOnboardingStep(0);
+          }
+        }
       })
       .catch(() => {});
 
@@ -156,7 +207,53 @@ export default function Home() {
 
     loadHistory();
     loadFavorites();
-  }, []);
+
+    // Handle ?load= deep link from Telegram bot
+    const loadId = searchParams.get("load");
+    if (loadId) {
+      loadHistoryItem(parseInt(loadId, 10));
+      // Clean URL
+      window.history.replaceState({}, "", "/");
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Chat polling — every 3 seconds when panel is open
+  useEffect(() => {
+    if (!chatOpen) return;
+
+    function fetchChat() {
+      const since = lastChatFetchRef.current;
+      const url = since
+        ? `/api/chat/messages?since=${encodeURIComponent(since)}`
+        : "/api/chat/messages";
+
+      fetch(url)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.messages?.length > 0) {
+            if (since) {
+              setChatMessages((prev) => [...prev, ...data.messages]);
+            } else {
+              setChatMessages(data.messages);
+            }
+            const last = data.messages[data.messages.length - 1];
+            lastChatFetchRef.current = last.createdAt;
+          }
+        })
+        .catch(() => {});
+
+      fetch("/api/chat/online")
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.users) setOnlineUsers(data.users);
+        })
+        .catch(() => {});
+    }
+
+    fetchChat();
+    const interval = setInterval(fetchChat, 3000);
+    return () => clearInterval(interval);
+  }, [chatOpen]);
 
   function loadHistory() {
     fetch("/api/history?limit=50")
@@ -443,10 +540,62 @@ export default function Home() {
     inputRef.current?.focus();
   }
 
-  function handleHistoryClick(item: HistoryItem) {
+  async function loadHistoryItem(id: number) {
+    setLoadingHistoryId(id);
     setSidebarOpen(false);
     setMessages([]);
-    runQuery(item.question);
+    setFixSuggestion(null);
+    try {
+      const res = await fetch(`/api/history/${id}`);
+      if (!res.ok) throw new Error("Not found");
+      const data = await res.json();
+      if (data.rows) {
+        // Has saved results — display directly
+        const result: QueryResult = {
+          question: data.question,
+          sql: data.sql,
+          rows: data.rows,
+          fields: data.fields || [],
+          rowCount: data.rowCount || 0,
+          executionMs: data.executionMs || 0,
+          error: data.error,
+          analysis: data.analysis,
+          chart: data.chart,
+          historyId: id,
+        };
+        setMessages([
+          { role: "user", content: data.question },
+          { role: "assistant", content: result.analysis || result.error || "", result },
+        ]);
+      } else {
+        // Old history without saved results — show prompt
+        setMessages([
+          { role: "user", content: data.question },
+          {
+            role: "assistant",
+            content: t("main.queryNotSaved"),
+            result: {
+              question: data.question,
+              sql: data.sql,
+              rows: [],
+              fields: [],
+              rowCount: 0,
+              executionMs: 0,
+              historyId: id,
+            },
+          },
+        ]);
+      }
+    } catch {
+      // Fallback: re-execute
+      runQuery("...");
+    } finally {
+      setLoadingHistoryId(null);
+    }
+  }
+
+  function handleHistoryClick(item: HistoryItem) {
+    loadHistoryItem(item.id);
   }
 
   async function handleLogout() {
@@ -596,6 +745,48 @@ export default function Home() {
     }
   }
 
+  // ─── Chat functions ───
+
+  async function sendChatMessage(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (!chatInput.trim()) return;
+    const msg = chatInput.trim();
+    setChatInput("");
+    try {
+      await fetch("/api/chat/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: msg }),
+      });
+      // Will be picked up by next poll
+    } catch { /* ignore */ }
+  }
+
+  async function sendToChat(result: QueryResult) {
+    if (!result.analysis) return;
+    const snippet = result.analysis.replace(/<[^>]+>/g, "").substring(0, 150);
+    try {
+      await fetch("/api/chat/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: `📊 ${result.question}`,
+          sharePreview: {
+            historyId: result.historyId || 0,
+            question: result.question,
+            analysisSnippet: snippet,
+          },
+        }),
+      });
+      if (!chatOpen) setChatOpen(true);
+    } catch { /* ignore */ }
+  }
+
+  function closeOnboarding() {
+    setOnboardingStep(-1);
+    fetch("/api/user/onboarding", { method: "POST" }).catch(() => {});
+  }
+
   const defaultSuggestions = [
     t("suggestion.1"),
     t("suggestion.2"),
@@ -609,7 +800,7 @@ export default function Home() {
   const showEmpty = !hasMessages && !loading;
 
   return (
-    <div className="flex h-screen bg-[#0a0a0a] text-white">
+    <div className="flex h-screen bg-[#0a0a0a] text-white relative">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
@@ -765,18 +956,19 @@ export default function Home() {
                   <path d="M8 1l2.2 4.5 5 .7-3.6 3.5.9 5L8 12.4 3.5 14.7l.9-5L.8 6.2l5-.7z" fill="currentColor" />
                 </svg>
               )}
-              {getQueryContext() && !getQueryContext()?.error && (
-                <button
-                  onClick={openShareModal}
-                  className="text-white/30 hover:text-white/60 transition p-1.5 rounded-lg hover:bg-white/5"
-                  title={t("main.shareResults")}
-                >
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                    <circle cx="12" cy="3" r="2" /><circle cx="4" cy="8" r="2" /><circle cx="12" cy="13" r="2" />
-                    <path d="M5.7 9.1l4.6 2.8M10.3 4.1l-4.6 2.8" />
-                  </svg>
-                </button>
-              )}
+              {/* Chat toggle */}
+              <button
+                onClick={() => setChatOpen(!chatOpen)}
+                className={`relative p-1.5 rounded-lg transition ${chatOpen ? "text-blue-400 bg-blue-500/10" : "text-white/30 hover:text-white/60 hover:bg-white/5"}`}
+                title={t("main.chat")}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <path d="M2 3h12v8H6l-3 2v-2H2z" />
+                </svg>
+                {onlineUsers.length > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border border-[#0a0a0a]" />
+                )}
+              </button>
               <Link
                 href="/profile"
                 className="text-sm text-white/50 hover:text-white transition"
@@ -941,6 +1133,80 @@ export default function Home() {
                   ) : msg.result ? (
                     /* Assistant message with full query result */
                     <div className="space-y-4">
+                      {/* Per-query header bar */}
+                      <div className="flex items-center gap-2 px-3 py-2 bg-white/[0.03] border border-white/10 rounded-xl">
+                        {/* Favorite toggle */}
+                        <button
+                          onClick={() => toggleFavorite(msg.result!.question, msg.result!.sql)}
+                          className={`p-1 transition shrink-0 ${
+                            favorites.some((f) => f.question === msg.result!.question)
+                              ? "text-amber-400"
+                              : "text-white/20 hover:text-white/40"
+                          }`}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l2.2 4.5 5 .7-3.6 3.5.9 5L8 12.4 3.5 14.7l.9-5L.8 6.2l5-.7z" /></svg>
+                        </button>
+                        {/* Title */}
+                        <span className="flex-1 text-sm text-white/60 truncate min-w-0">
+                          {msg.result.question.length > 60 ? msg.result.question.substring(0, 60) + "..." : msg.result.question}
+                        </span>
+                        {/* Execution time badge */}
+                        {msg.result.executionMs > 0 && (
+                          <span className="text-[11px] text-white/25 font-mono shrink-0">
+                            {msg.result.executionMs}{t("main.ms")}
+                          </span>
+                        )}
+                        {/* Send to chat */}
+                        {!msg.result.error && msg.result.analysis && (
+                          <button
+                            onClick={() => sendToChat(msg.result!)}
+                            className="text-white/20 hover:text-blue-400 transition p-1 rounded shrink-0"
+                            title={t("main.sendToChat")}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                              <path d="M2 3h12v8H6l-3 2v-2H2z" />
+                            </svg>
+                          </button>
+                        )}
+                        {/* Re-execute */}
+                        <button
+                          onClick={() => { setMessages([]); runQuery(msg.result!.question); }}
+                          className="text-white/20 hover:text-white/50 transition p-1 rounded shrink-0"
+                          title={t("main.reExecute")}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                            <path d="M1.5 8a6.5 6.5 0 0 1 11.25-4.5M14.5 8a6.5 6.5 0 0 1-11.25 4.5" />
+                            <path d="M13.5 1v3.5H10M2.5 15v-3.5H6" />
+                          </svg>
+                        </button>
+                        {/* Share */}
+                        {!msg.result.error && (
+                          <button
+                            onClick={openShareModal}
+                            className="text-white/20 hover:text-white/50 transition p-1 rounded shrink-0"
+                            title={t("main.share")}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                              <circle cx="12" cy="3" r="2" /><circle cx="4" cy="8" r="2" /><circle cx="12" cy="13" r="2" />
+                              <path d="M5.7 9.1l4.6 2.8M10.3 4.1l-4.6 2.8" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Not saved prompt (old history items) */}
+                      {!msg.result.error && msg.result.rows.length === 0 && msg.result.sql && !msg.result.analysis && msg.result.historyId && (
+                        <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 flex items-center justify-between">
+                          <p className="text-sm text-white/50">{t("main.queryNotSaved")}</p>
+                          <button
+                            onClick={() => { setMessages([]); runQuery(msg.result!.question); }}
+                            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-600 hover:bg-amber-500 transition"
+                          >
+                            {t("main.runQuery")}
+                          </button>
+                        </div>
+                      )}
+
                       {msg.result.error && (
                         <div className="space-y-3">
                           <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-red-400 text-sm">
@@ -1287,6 +1553,181 @@ export default function Home() {
                 </>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Team Chat Panel — right side */}
+      {chatOpen && (
+        <aside className="w-72 border-l border-white/10 bg-[#111] flex flex-col shrink-0 hidden lg:flex">
+          {/* Chat header */}
+          <div className="px-3 py-3 border-b border-white/10 flex items-center justify-between">
+            <h3 className="text-sm font-semibold">{t("main.chat")}</h3>
+            <button onClick={() => setChatOpen(false)} className="text-white/30 hover:text-white transition p-1">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+            </button>
+          </div>
+
+          {/* Online users */}
+          {onlineUsers.length > 0 && (
+            <div className="px-3 py-2 border-b border-white/10">
+              <p className="text-[10px] text-white/30 uppercase tracking-wider mb-1.5">{t("main.online")}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {onlineUsers.map((u) => (
+                  <span key={u.id} className="flex items-center gap-1 text-xs text-white/50 bg-white/5 rounded-full px-2 py-0.5">
+                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full" />
+                    {u.username ? `@${u.username}` : u.firstName}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-3">
+            {chatMessages.length === 0 && (
+              <p className="text-xs text-white/20 text-center py-8">{t("main.noMessages")}</p>
+            )}
+            {chatMessages.map((m) => (
+              <div key={m.id} className="space-y-1">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-[11px] font-medium text-blue-400">
+                    {m.username ? `@${m.username}` : m.firstName}
+                  </span>
+                  <span className="text-[10px] text-white/20">
+                    {new Date(m.createdAt).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                </div>
+                <p className="text-xs text-white/70 leading-relaxed">{m.message}</p>
+                {m.sharePreview && (
+                  <div
+                    className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-2 mt-1 cursor-pointer hover:border-blue-500/40 transition"
+                    onClick={() => m.sharePreview?.historyId && loadHistoryItem(m.sharePreview.historyId)}
+                  >
+                    <p className="text-[11px] text-blue-400 font-medium truncate">{m.sharePreview.question}</p>
+                    <p className="text-[10px] text-white/40 mt-0.5 line-clamp-2">{m.sharePreview.analysisSnippet}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+            <div ref={chatPanelEndRef} />
+          </div>
+
+          {/* Chat input */}
+          <form onSubmit={sendChatMessage} className="border-t border-white/10 p-2">
+            <div className="flex gap-1.5">
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder={t("main.typeMessage")}
+                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500/50 transition"
+              />
+              <button
+                type="submit"
+                disabled={!chatInput.trim()}
+                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-30 px-2.5 py-1.5 rounded-lg transition text-xs"
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M1 1l14 7-14 7V9.5L9 8 1 6.5z" /></svg>
+              </button>
+            </div>
+          </form>
+        </aside>
+      )}
+
+      {/* Onboarding Overlay */}
+      {onboardingStep >= 0 && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#141414] border border-white/10 rounded-2xl max-w-sm w-full p-6 text-center">
+            {/* Step indicators */}
+            <div className="flex justify-center gap-1.5 mb-6">
+              {[0, 1, 2, 3].map((s) => (
+                <div key={s} className={`h-1 w-8 rounded-full transition ${s <= onboardingStep ? "bg-blue-500" : "bg-white/10"}`} />
+              ))}
+            </div>
+
+            {/* Step content */}
+            <div className="mb-6">
+              {onboardingStep === 0 && (
+                <>
+                  <div className="w-12 h-12 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-blue-400">
+                      <circle cx="8" cy="8" r="6" /><path d="M6 6.5c0-1.1.9-2 2-2s2 .9 2 2c0 .7-.4 1.4-1 1.7V9M8 11.5v.5" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-bold mb-2">{t("main.onboarding1")}</h3>
+                  <p className="text-sm text-white/50">{t("main.onboarding1desc")}</p>
+                </>
+              )}
+              {onboardingStep === 1 && (
+                <>
+                  <div className="w-12 h-12 bg-purple-500/10 border border-purple-500/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-purple-400">
+                      <path d="M2 4h12M2 8h8M2 12h10" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-bold mb-2">{t("main.onboarding2")}</h3>
+                  <p className="text-sm text-white/50">{t("main.onboarding2desc")}</p>
+                </>
+              )}
+              {onboardingStep === 2 && (
+                <>
+                  <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-emerald-400">
+                      <path d="M2 3h12v8H6l-3 2v-2H2z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-bold mb-2">{t("main.onboarding3")}</h3>
+                  <p className="text-sm text-white/50">{t("main.onboarding3desc")}</p>
+                </>
+              )}
+              {onboardingStep === 3 && (
+                <>
+                  <div className="w-12 h-12 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor" className="text-amber-400">
+                      <path d="M8 1l2.2 4.5 5 .7-3.6 3.5.9 5L8 12.4 3.5 14.7l.9-5L.8 6.2l5-.7z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-bold mb-2">{t("main.onboarding4")}</h3>
+                  <p className="text-sm text-white/50">{t("main.onboarding4desc")}</p>
+                </>
+              )}
+            </div>
+
+            {/* Buttons */}
+            <div className="flex justify-center gap-3">
+              <button
+                onClick={closeOnboarding}
+                className="px-4 py-2 rounded-lg text-sm text-white/40 hover:text-white/70 hover:bg-white/5 transition"
+              >
+                {t("main.skip")}
+              </button>
+              {onboardingStep < 3 ? (
+                <button
+                  onClick={() => setOnboardingStep((s) => s + 1)}
+                  className="px-5 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-500 transition"
+                >
+                  {t("main.next")}
+                </button>
+              ) : (
+                <button
+                  onClick={closeOnboarding}
+                  className="px-5 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-500 transition"
+                >
+                  {t("main.getStarted")}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading history overlay */}
+      {loadingHistoryId !== null && (
+        <div className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center">
+          <div className="flex items-center gap-3 bg-[#141414] border border-white/10 rounded-xl px-5 py-3">
+            <div className="animate-spin h-4 w-4 border-2 border-blue-500/30 border-t-blue-400 rounded-full" />
+            <span className="text-sm text-white/60">{t("main.loadingHistory")}</span>
           </div>
         </div>
       )}

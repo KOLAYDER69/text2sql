@@ -15,6 +15,7 @@ export type AppUser = {
   can_invite: boolean;
   can_train: boolean;
   can_schedule: boolean;
+  has_seen_onboarding: boolean;
   created_at: string;
   last_seen_at: string;
 };
@@ -38,6 +39,10 @@ export type AppQueryHistory = {
   row_count: number | null;
   execution_ms: number | null;
   error: string | null;
+  rows_json: Record<string, unknown>[] | null;
+  fields: string[] | null;
+  analysis: string | null;
+  chart_config: unknown | null;
   created_at: string;
 };
 
@@ -236,11 +241,17 @@ export async function saveQueryHistory(
     row_count?: number | null;
     execution_ms?: number | null;
     error?: string | null;
+    rows_json?: Record<string, unknown>[] | null;
+    fields?: string[] | null;
+    analysis?: string | null;
+    chart_config?: unknown | null;
   },
-): Promise<void> {
-  await pool.query(
-    `INSERT INTO app_query_history (user_id, platform, question, sql, row_count, execution_ms, error)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+): Promise<number> {
+  const cappedRows = data.rows_json ? data.rows_json.slice(0, 200) : null;
+  const { rows } = await pool.query<{ id: number }>(
+    `INSERT INTO app_query_history (user_id, platform, question, sql, row_count, execution_ms, error, rows_json, fields, analysis, chart_config)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+     RETURNING id`,
     [
       data.user_id,
       data.platform,
@@ -249,8 +260,13 @@ export async function saveQueryHistory(
       data.row_count ?? null,
       data.execution_ms ?? null,
       data.error ?? null,
+      cappedRows ? JSON.stringify(cappedRows) : null,
+      data.fields ?? null,
+      data.analysis ?? null,
+      data.chart_config ? JSON.stringify(data.chart_config) : null,
     ],
   );
+  return rows[0].id;
 }
 
 export async function getQueryHistory(
@@ -263,6 +279,18 @@ export async function getQueryHistory(
     [userId, limit],
   );
   return rows;
+}
+
+export async function getQueryHistoryById(
+  pool: Pool,
+  id: number,
+  userId: number,
+): Promise<AppQueryHistory | null> {
+  const { rows } = await pool.query<AppQueryHistory>(
+    "SELECT * FROM app_query_history WHERE id = $1 AND user_id = $2",
+    [id, userId],
+  );
+  return rows[0] ?? null;
 }
 
 // ─── Auth Tokens ───
@@ -561,4 +589,87 @@ export async function deleteSchemaDescription(
         [tableName],
       );
   return (result.rowCount ?? 0) > 0;
+}
+
+// ─── Chat Messages ───
+
+export type AppChatMessage = {
+  id: number;
+  user_id: number;
+  message: string;
+  share_preview: { historyId: number; question: string; analysisSnippet: string } | null;
+  created_at: string;
+};
+
+export type AppChatMessageWithUser = AppChatMessage & {
+  username: string | null;
+  first_name: string;
+};
+
+export async function getChatMessages(
+  pool: Pool,
+  since: Date,
+  limit = 50,
+): Promise<AppChatMessageWithUser[]> {
+  const { rows } = await pool.query<AppChatMessageWithUser>(
+    `SELECT m.*, u.username, u.first_name
+     FROM app_chat_messages m
+     JOIN app_users u ON u.id = m.user_id
+     WHERE m.created_at > $1
+     ORDER BY m.created_at ASC
+     LIMIT $2`,
+    [since.toISOString(), limit],
+  );
+  return rows;
+}
+
+export async function getRecentChatMessages(
+  pool: Pool,
+  limit = 50,
+): Promise<AppChatMessageWithUser[]> {
+  const { rows } = await pool.query<AppChatMessageWithUser>(
+    `SELECT m.*, u.username, u.first_name
+     FROM app_chat_messages m
+     JOIN app_users u ON u.id = m.user_id
+     ORDER BY m.created_at DESC
+     LIMIT $1`,
+    [limit],
+  );
+  return rows.reverse();
+}
+
+export async function createChatMessage(
+  pool: Pool,
+  userId: number,
+  message: string,
+  sharePreview?: { historyId: number; question: string; analysisSnippet: string } | null,
+): Promise<AppChatMessage> {
+  const { rows } = await pool.query<AppChatMessage>(
+    `INSERT INTO app_chat_messages (user_id, message, share_preview)
+     VALUES ($1, $2, $3)
+     RETURNING *`,
+    [userId, message, sharePreview ? JSON.stringify(sharePreview) : null],
+  );
+  return rows[0];
+}
+
+export async function getOnlineUsers(
+  pool: Pool,
+): Promise<{ id: number; username: string | null; first_name: string }[]> {
+  const { rows } = await pool.query<{ id: number; username: string | null; first_name: string }>(
+    "SELECT id, username, first_name FROM app_users WHERE last_seen_at > now() - interval '2 minutes'",
+  );
+  return rows;
+}
+
+// ─── Onboarding ───
+
+export async function markOnboardingSeen(
+  pool: Pool,
+  userId: number,
+): Promise<void> {
+  await pool.query(
+    "UPDATE app_users SET has_seen_onboarding = true WHERE id = $1",
+    [userId],
+  );
 }

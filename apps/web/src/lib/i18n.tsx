@@ -193,6 +193,31 @@ const translations = {
   "share.openApp": { ru: "Открыть Leads AI", en: "Open Leads AI" },
   "share.sharedOn": { ru: "Опубликовано", en: "Shared on" },
 
+  // ─── Chat ───
+  "main.chat": { ru: "Чат", en: "Chat" },
+  "main.online": { ru: "Онлайн", en: "Online" },
+  "main.sendToChat": { ru: "В чат", en: "To chat" },
+  "main.typeMessage": { ru: "Написать сообщение...", en: "Write a message..." },
+  "main.noMessages": { ru: "Пока нет сообщений", en: "No messages yet" },
+
+  // ─── Query header ───
+  "main.reExecute": { ru: "Выполнить снова", en: "Re-execute" },
+  "main.queryNotSaved": { ru: "Результат не сохранён. Выполнить запрос?", en: "Result not saved. Run query?" },
+  "main.runQuery": { ru: "Выполнить", en: "Run" },
+
+  // ─── Onboarding ───
+  "main.onboarding1": { ru: "Задайте любой вопрос о данных", en: "Ask any question about your data" },
+  "main.onboarding1desc": { ru: "Напишите вопрос на обычном языке — ИИ сгенерирует SQL и покажет результат", en: "Write a question in plain language — AI will generate SQL and show results" },
+  "main.onboarding2": { ru: "Ваша история запросов", en: "Your query history" },
+  "main.onboarding2desc": { ru: "Все запросы сохраняются слева — кликните, чтобы увидеть результат", en: "All queries are saved on the left — click to see the result" },
+  "main.onboarding3": { ru: "Общайтесь с командой", en: "Chat with your team" },
+  "main.onboarding3desc": { ru: "Отправляйте результаты анализа коллегам через командный чат", en: "Share analysis results with colleagues via team chat" },
+  "main.onboarding4": { ru: "Готово!", en: "All set!" },
+  "main.onboarding4desc": { ru: "Начните с вопроса — попробуйте одну из подсказок ниже", en: "Start with a question — try one of the suggestions below" },
+  "main.next": { ru: "Далее", en: "Next" },
+  "main.getStarted": { ru: "Начать!", en: "Let's go!" },
+  "main.loadingHistory": { ru: "Загрузка...", en: "Loading..." },
+
   // ─── Language ───
   "lang.ru": { ru: "Русский", en: "Russian" },
   "lang.en": { ru: "English", en: "English" },

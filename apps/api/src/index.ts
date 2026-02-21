@@ -39,6 +39,12 @@ import {
   createSharedQuery,
   getSharedQuery,
   searchUsers,
+  getQueryHistoryById,
+  getChatMessages,
+  getRecentChatMessages,
+  createChatMessage,
+  getOnlineUsers,
+  markOnboardingSeen,
 } from "@querybot/engine";
 import type { FollowUpMessage, SchemaDescriptions } from "@querybot/engine";
 import {
@@ -256,6 +262,7 @@ app.get("/api/auth/me", requireAuth, async (req, res) => {
       canInvite: user.can_invite,
       canTrain: user.can_train,
       canSchedule: user.can_schedule,
+      hasSeenOnboarding: user.has_seen_onboarding,
     },
   });
 });
@@ -312,18 +319,27 @@ app.post("/api/query", requireAuth, async (req, res) => {
     const descriptions = await getDescriptions();
     const result = await query(pool, question.trim(), descriptions);
 
-    // Save to history (fire-and-forget)
-    saveQueryHistory(appPool, {
-      user_id: session.userId,
-      platform: "web",
-      question: question.trim(),
-      sql: result.sql,
-      row_count: result.rowCount,
-      execution_ms: result.executionMs,
-      error: result.error,
-    }).catch((err) => console.error("Failed to save history:", err));
+    // Save to history with full results
+    let historyId: number | undefined;
+    try {
+      historyId = await saveQueryHistory(appPool, {
+        user_id: session.userId,
+        platform: "web",
+        question: question.trim(),
+        sql: result.sql,
+        row_count: result.rowCount,
+        execution_ms: result.executionMs,
+        error: result.error,
+        rows_json: result.error ? null : result.rows,
+        fields: result.error ? null : result.fields,
+        analysis: result.analysis ?? null,
+        chart_config: result.chart ?? null,
+      });
+    } catch (err) {
+      console.error("Failed to save history:", err);
+    }
 
-    res.json(result);
+    res.json({ ...result, historyId });
   } catch (err) {
     res.status(500).json({
       error: err instanceof Error ? err.message : "Internal error",
@@ -418,6 +434,38 @@ app.get("/api/history", requireAuth, async (req, res) => {
   const limit = Math.min(Number(req.query.limit || 20), 100);
   const history = await getQueryHistory(appPool, session.userId, limit);
   res.json({ history });
+});
+
+app.get("/api/history/:id", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const id = parseInt(idParam, 10);
+    if (isNaN(id)) {
+      res.status(400).json({ error: "Invalid ID" });
+      return;
+    }
+    const item = await getQueryHistoryById(appPool, id, session.userId);
+    if (!item) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    res.json({
+      id: item.id,
+      question: item.question,
+      sql: item.sql,
+      rows: item.rows_json,
+      fields: item.fields,
+      rowCount: item.row_count ?? 0,
+      executionMs: item.execution_ms ?? 0,
+      error: item.error,
+      analysis: item.analysis,
+      chart: item.chart_config,
+      createdAt: item.created_at,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
 });
 
 // ─── Favorites ───
@@ -950,6 +998,84 @@ app.post("/api/schema/suggest", requireAuth, async (req, res) => {
     res.status(500).json({
       error: err instanceof Error ? err.message : "Internal error",
     });
+  }
+});
+
+// ─── Chat ───
+
+app.get("/api/chat/messages", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    // Heartbeat: update last_seen on every poll
+    updateLastSeen(appPool, session.userId).catch(() => {});
+
+    const since = req.query.since as string | undefined;
+    let messages;
+    if (since) {
+      messages = await getChatMessages(appPool, new Date(since), 50);
+    } else {
+      messages = await getRecentChatMessages(appPool, 50);
+    }
+    res.json({
+      messages: messages.map((m) => ({
+        id: m.id,
+        userId: m.user_id,
+        username: m.username,
+        firstName: m.first_name,
+        message: m.message,
+        sharePreview: m.share_preview,
+        createdAt: m.created_at,
+      })),
+    });
+  } catch {
+    res.json({ messages: [] });
+  }
+});
+
+app.post("/api/chat/messages", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    const { message, sharePreview } = req.body as {
+      message: string;
+      sharePreview?: { historyId: number; question: string; analysisSnippet: string };
+    };
+
+    if (!message || typeof message !== "string") {
+      res.status(400).json({ error: "message is required" });
+      return;
+    }
+
+    await createChatMessage(appPool, session.userId, message.trim(), sharePreview ?? null);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
+});
+
+app.get("/api/chat/online", requireAuth, async (_req, res) => {
+  try {
+    const users = await getOnlineUsers(appPool);
+    res.json({
+      users: users.map((u) => ({
+        id: u.id,
+        username: u.username,
+        firstName: u.first_name,
+      })),
+    });
+  } catch {
+    res.json({ users: [] });
+  }
+});
+
+// ─── Onboarding ───
+
+app.post("/api/user/onboarding", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    await markOnboardingSeen(appPool, session.userId);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
   }
 });
 
