@@ -468,7 +468,7 @@ export default function DashboardPage() {
                         <CartesianGrid stroke="rgba(255,255,255,0.05)" />
                         <XAxis dataKey="label" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} />
                         <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} tickFormatter={(v: number) => fmtCurrency(v)} />
-                        <Tooltip {...tooltipStyle} formatter={(value) => fmtCurrency(Number(value ?? 0))} />
+                        <Tooltip {...tooltipStyle} cursor={{ fill: "rgba(255,255,255,0.05)" }} formatter={(value) => fmtCurrency(Number(value ?? 0))} />
                         <Legend wrapperStyle={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }} />
                         <Bar dataKey={planLabel} fill="#3b82f6" radius={[4, 4, 0, 0]} opacity={0.5} />
                         <Bar dataKey={factLabel} fill="#34d399" radius={[4, 4, 0, 0]} />
@@ -485,7 +485,7 @@ export default function DashboardPage() {
                         <CartesianGrid stroke="rgba(255,255,255,0.05)" />
                         <XAxis dataKey="label" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} />
                         <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} tickFormatter={(v: number) => fmtCurrency(v)} />
-                        <Tooltip {...tooltipStyle} formatter={(value) => fmtCurrency(Number(value ?? 0))} />
+                        <Tooltip {...tooltipStyle} cursor={{ fill: "rgba(255,255,255,0.05)" }} formatter={(value) => fmtCurrency(Number(value ?? 0))} />
                         <Legend wrapperStyle={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }} />
                         <Bar dataKey={planLabel} fill="#3b82f6" radius={[4, 4, 0, 0]} opacity={0.5} />
                         <Bar dataKey={factLabel} fill="#fbbf24" radius={[4, 4, 0, 0]} />
@@ -590,7 +590,7 @@ export default function DashboardPage() {
                         <CartesianGrid stroke="rgba(255,255,255,0.05)" />
                         <XAxis dataKey="label" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} />
                         <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} tickFormatter={(v: number) => fmtCurrency(v)} />
-                        <Tooltip {...tooltipStyle} formatter={(value) => fmtCurrency(Number(value ?? 0))} />
+                        <Tooltip {...tooltipStyle} cursor={{ fill: "rgba(255,255,255,0.05)" }} formatter={(value) => fmtCurrency(Number(value ?? 0))} />
                         <Legend wrapperStyle={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }} />
                         <Line type="monotone" dataKey={planLabel} stroke="#3b82f6" strokeWidth={2} strokeDasharray="8 4" dot={false} />
                         <Line type="monotone" dataKey={factLabel} stroke="#34d399" strokeWidth={2.5} dot={{ r: 3, fill: "#34d399" }} connectNulls={false} />
@@ -607,7 +607,7 @@ export default function DashboardPage() {
                         <CartesianGrid stroke="rgba(255,255,255,0.05)" />
                         <XAxis dataKey="label" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} />
                         <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} tickFormatter={(v: number) => fmtCurrency(v)} />
-                        <Tooltip {...tooltipStyle} formatter={(value) => fmtCurrency(Number(value ?? 0))} />
+                        <Tooltip {...tooltipStyle} cursor={{ fill: "rgba(255,255,255,0.05)" }} formatter={(value) => fmtCurrency(Number(value ?? 0))} />
                         <Legend wrapperStyle={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }} />
                         <Line type="monotone" dataKey={planLabel} stroke="#3b82f6" strokeWidth={2} strokeDasharray="8 4" dot={false} />
                         <Line type="monotone" dataKey={factLabel} stroke="#fbbf24" strokeWidth={2.5} dot={{ r: 3, fill: "#fbbf24" }} connectNulls={false} />
