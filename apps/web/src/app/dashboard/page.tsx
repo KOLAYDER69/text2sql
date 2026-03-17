@@ -243,13 +243,22 @@ export default function DashboardPage() {
   }
 
   // ─── Chart data ───
-  const barData = data?.monthly.filter((m) => !m.isFuture || m.planned_revenue > 0).map((m) => ({
+  const planLabel = lang === "ru" ? "План" : "Plan";
+  const factLabel = lang === "ru" ? "Факт" : "Actual";
+
+  const revenueBarData = data?.monthly.filter((m) => !m.isFuture || m.planned_revenue > 0).map((m) => ({
     label: m.label,
-    [lang === "ru" ? "План" : "Plan"]: m.planned_revenue,
-    [lang === "ru" ? "Факт" : "Actual"]: m.actual_revenue,
+    [planLabel]: m.planned_revenue,
+    [factLabel]: m.actual_revenue,
   })) ?? [];
 
-  const cumulativeData = (() => {
+  const replBarData = data?.monthly.filter((m) => !m.isFuture || m.planned_replenishments > 0).map((m) => ({
+    label: m.label,
+    [planLabel]: m.planned_replenishments,
+    [factLabel]: m.actual_replenishments,
+  })) ?? [];
+
+  const cumulativeRevenueData = (() => {
     if (!data) return [];
     let cumPlan = 0, cumFact = 0;
     return data.monthly.map((m) => {
@@ -257,8 +266,22 @@ export default function DashboardPage() {
       cumFact += m.actual_revenue;
       return {
         label: m.label,
-        [lang === "ru" ? "План" : "Plan"]: cumPlan,
-        [lang === "ru" ? "Факт" : "Actual"]: m.isFuture && m.actual_revenue === 0 ? null : cumFact,
+        [planLabel]: cumPlan,
+        [factLabel]: m.isFuture && m.actual_revenue === 0 ? null : cumFact,
+      };
+    });
+  })();
+
+  const cumulativeReplData = (() => {
+    if (!data) return [];
+    let cumPlan = 0, cumFact = 0;
+    return data.monthly.map((m) => {
+      cumPlan += m.planned_replenishments;
+      cumFact += m.actual_replenishments;
+      return {
+        label: m.label,
+        [planLabel]: cumPlan,
+        [factLabel]: m.isFuture && m.actual_replenishments === 0 ? null : cumFact,
       };
     });
   })();
@@ -287,6 +310,26 @@ export default function DashboardPage() {
   const ytd = data?.ytdPercent ?? 0;
   const hasPlans = (data?.yearTotals.planned_revenue ?? 0) > 0;
   const behindPlan = hasPlans && ytd < 90;
+
+  // Strong changes (>30%) for metrics alerts
+  const strongChanges: { label: string; delta: string; positive: boolean }[] = [];
+  if (wm) {
+    const checks: { label: string; curr: number; prev: number }[] = [
+      { label: lang === "ru" ? "Пополнения" : "Deposits", curr: wm.thisWeek.deposits, prev: wm.lastWeek.deposits },
+      { label: lang === "ru" ? "Доход" : "Revenue", curr: wm.thisWeek.revenue, prev: wm.lastWeek.revenue },
+      { label: lang === "ru" ? "Операции" : "Operations", curr: wm.thisWeek.operations, prev: wm.lastWeek.operations },
+      { label: lang === "ru" ? "Активные пользователи" : "Active Users", curr: wm.thisWeek.users, prev: wm.lastWeek.users },
+      { label: lang === "ru" ? "Новые пользователи" : "New Users", curr: wm.thisWeek.new_users, prev: wm.lastWeek.new_users },
+      { label: lang === "ru" ? "Карточные транзакции" : "Card Txns", curr: wm.thisWeek.card_txns, prev: wm.lastWeek.card_txns },
+    ];
+    for (const c of checks) {
+      if (c.prev === 0 && c.curr === 0) continue;
+      const pct = c.prev === 0 ? 100 : ((c.curr - c.prev) / c.prev) * 100;
+      if (Math.abs(pct) >= 30) {
+        strongChanges.push({ label: c.label, delta: `${pct >= 0 ? "+" : ""}${pct.toFixed(0)}%`, positive: pct > 0 });
+      }
+    }
+  }
 
   return (
     <div className="flex h-screen bg-[#0a0a0a] text-white">
@@ -387,104 +430,129 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* ─── Monthly Bar Chart ─── */}
-            {barData.length > 0 && (
-              <Section title={t("dash.monthlyChart")}>
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={barData} barGap={2}>
-                      <CartesianGrid stroke="rgba(255,255,255,0.05)" />
-                      <XAxis dataKey="label" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 12 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} />
-                      <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 12 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} tickFormatter={(v: number) => fmtCurrency(v)} />
-                      <Tooltip {...tooltipStyle} formatter={(value) => fmtCurrency(Number(value ?? 0))} />
-                      <Legend wrapperStyle={{ color: "rgba(255,255,255,0.6)", fontSize: 13 }} />
-                      <Bar dataKey={lang === "ru" ? "План" : "Plan"} fill="#3b82f6" radius={[4, 4, 0, 0]} opacity={0.5} />
-                      <Bar dataKey={lang === "ru" ? "Факт" : "Actual"} fill="#34d399" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-
-                {/* Edit plan buttons */}
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {data?.monthly.map((m) => (
-                    <button
-                      key={m.month}
-                      onClick={() => setEditingPlan({
-                        month: m.month,
-                        replenishments: String(m.planned_replenishments),
-                        revenue: String(m.planned_revenue),
-                      })}
-                      className="text-xs px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-white/40 hover:text-white/60 transition"
-                    >
-                      {m.label}
-                    </button>
-                  ))}
-                  <span className="text-xs text-white/20 self-center ml-1">{t("dash.editPlan")}</span>
-                </div>
-
-                {/* Plan edit modal */}
-                {editingPlan && (
-                  <div className="mt-4 bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
-                    <p className="text-sm font-medium">
-                      {t("dash.editPlan")}: {data?.monthly.find((m) => m.month === editingPlan.month)?.label}
-                    </p>
-                    <div className="flex gap-4">
-                      <label className="flex-1">
-                        <span className="text-xs text-white/40">{t("dash.replenishments")}</span>
-                        <input
-                          type="number"
-                          value={editingPlan.replenishments}
-                          onChange={(e) => setEditingPlan({ ...editingPlan, replenishments: e.target.value })}
-                          className="mt-1 w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-                        />
-                      </label>
-                      <label className="flex-1">
-                        <span className="text-xs text-white/40">{t("dash.revenue")}</span>
-                        <input
-                          type="number"
-                          value={editingPlan.revenue}
-                          onChange={(e) => setEditingPlan({ ...editingPlan, revenue: e.target.value })}
-                          className="mt-1 w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-                        />
-                      </label>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={savePlan}
-                        disabled={savingPlan}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition disabled:opacity-50"
-                      >
-                        {savingPlan ? t("dash.saving") : t("dash.save")}
-                      </button>
-                      <button
-                        onClick={() => setEditingPlan(null)}
-                        className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm transition"
-                      >
-                        {lang === "ru" ? "Отмена" : "Cancel"}
-                      </button>
-                    </div>
+            {/* ─── Monthly Bar Charts: Revenue + Replenishments ─── */}
+            {data && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Revenue bar chart */}
+                <Section title={`${t("dash.revenue")} — ${t("dash.planFact")}`}>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={revenueBarData} barGap={2}>
+                        <CartesianGrid stroke="rgba(255,255,255,0.05)" />
+                        <XAxis dataKey="label" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} />
+                        <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} tickFormatter={(v: number) => fmtCurrency(v)} />
+                        <Tooltip {...tooltipStyle} formatter={(value) => fmtCurrency(Number(value ?? 0))} />
+                        <Legend wrapperStyle={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }} />
+                        <Bar dataKey={planLabel} fill="#3b82f6" radius={[4, 4, 0, 0]} opacity={0.5} />
+                        <Bar dataKey={factLabel} fill="#34d399" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
-                )}
-              </Section>
+                </Section>
+
+                {/* Replenishments bar chart */}
+                <Section title={`${t("dash.replenishments")} — ${t("dash.planFact")}`}>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={replBarData} barGap={2}>
+                        <CartesianGrid stroke="rgba(255,255,255,0.05)" />
+                        <XAxis dataKey="label" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} />
+                        <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} />
+                        <Tooltip {...tooltipStyle} />
+                        <Legend wrapperStyle={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }} />
+                        <Bar dataKey={planLabel} fill="#3b82f6" radius={[4, 4, 0, 0]} opacity={0.5} />
+                        <Bar dataKey={factLabel} fill="#fbbf24" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Section>
+              </div>
             )}
 
-            {/* ─── Cumulative Annual Chart ─── */}
-            {cumulativeData.length > 0 && (
-              <Section title={t("dash.annualChart")}>
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={cumulativeData}>
-                      <CartesianGrid stroke="rgba(255,255,255,0.05)" />
-                      <XAxis dataKey="label" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 12 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} />
-                      <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 12 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} tickFormatter={(v: number) => fmtCurrency(v)} />
-                      <Tooltip {...tooltipStyle} formatter={(value) => fmtCurrency(Number(value ?? 0))} />
-                      <Legend wrapperStyle={{ color: "rgba(255,255,255,0.6)", fontSize: 13 }} />
-                      <Line type="monotone" dataKey={lang === "ru" ? "План" : "Plan"} stroke="#3b82f6" strokeWidth={2} strokeDasharray="8 4" dot={false} />
-                      <Line type="monotone" dataKey={lang === "ru" ? "Факт" : "Actual"} stroke="#34d399" strokeWidth={2.5} dot={{ r: 3, fill: "#34d399" }} connectNulls={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
+            {/* Edit plan buttons */}
+            {data && (
+              <div className="flex flex-wrap gap-2 -mt-4">
+                {data.monthly.map((m) => (
+                  <button
+                    key={m.month}
+                    onClick={() => setEditingPlan({
+                      month: m.month,
+                      replenishments: String(m.planned_replenishments),
+                      revenue: String(m.planned_revenue),
+                    })}
+                    className="text-xs px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-white/40 hover:text-white/60 transition"
+                  >
+                    {m.label}
+                  </button>
+                ))}
+                <span className="text-xs text-white/20 self-center ml-1">{t("dash.editPlan")}</span>
+              </div>
+            )}
+
+            {/* Plan edit modal */}
+            {editingPlan && (
+              <div className="-mt-4 bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+                <p className="text-sm font-medium">
+                  {t("dash.editPlan")}: {data?.monthly.find((m) => m.month === editingPlan.month)?.label}
+                </p>
+                <div className="flex gap-4">
+                  <label className="flex-1">
+                    <span className="text-xs text-white/40">{t("dash.replenishments")}</span>
+                    <input type="number" value={editingPlan.replenishments} onChange={(e) => setEditingPlan({ ...editingPlan, replenishments: e.target.value })} className="mt-1 w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
+                  </label>
+                  <label className="flex-1">
+                    <span className="text-xs text-white/40">{t("dash.revenue")}</span>
+                    <input type="number" value={editingPlan.revenue} onChange={(e) => setEditingPlan({ ...editingPlan, revenue: e.target.value })} className="mt-1 w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
+                  </label>
                 </div>
-              </Section>
+                <div className="flex gap-2">
+                  <button onClick={savePlan} disabled={savingPlan} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition disabled:opacity-50">
+                    {savingPlan ? t("dash.saving") : t("dash.save")}
+                  </button>
+                  <button onClick={() => setEditingPlan(null)} className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm transition">
+                    {lang === "ru" ? "Отмена" : "Cancel"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ─── Cumulative Annual Charts ─── */}
+            {data && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Cumulative revenue */}
+                <Section title={`${t("dash.annualChart")} — ${t("dash.revenue")}`}>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={cumulativeRevenueData}>
+                        <CartesianGrid stroke="rgba(255,255,255,0.05)" />
+                        <XAxis dataKey="label" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} />
+                        <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} tickFormatter={(v: number) => fmtCurrency(v)} />
+                        <Tooltip {...tooltipStyle} formatter={(value) => fmtCurrency(Number(value ?? 0))} />
+                        <Legend wrapperStyle={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }} />
+                        <Line type="monotone" dataKey={planLabel} stroke="#3b82f6" strokeWidth={2} strokeDasharray="8 4" dot={false} />
+                        <Line type="monotone" dataKey={factLabel} stroke="#34d399" strokeWidth={2.5} dot={{ r: 3, fill: "#34d399" }} connectNulls={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Section>
+
+                {/* Cumulative replenishments */}
+                <Section title={`${t("dash.annualChart")} — ${t("dash.replenishments")}`}>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={cumulativeReplData}>
+                        <CartesianGrid stroke="rgba(255,255,255,0.05)" />
+                        <XAxis dataKey="label" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} />
+                        <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} />
+                        <Tooltip {...tooltipStyle} />
+                        <Legend wrapperStyle={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }} />
+                        <Line type="monotone" dataKey={planLabel} stroke="#3b82f6" strokeWidth={2} strokeDasharray="8 4" dot={false} />
+                        <Line type="monotone" dataKey={factLabel} stroke="#fbbf24" strokeWidth={2.5} dot={{ r: 3, fill: "#fbbf24" }} connectNulls={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Section>
+              </div>
             )}
 
             {/* ─── Key Metrics ─── */}
@@ -502,6 +570,27 @@ export default function DashboardPage() {
                 </div>
                 {!wm.thisWeek.operations && !wm.lastWeek.operations && (
                   <p className="text-sm text-amber-400/60 mt-3">{t("dash.noData")}</p>
+                )}
+                {/* Strong changes alert */}
+                {strongChanges.length > 0 && (
+                  <div className="mt-4 bg-amber-500/5 border border-amber-500/15 rounded-xl p-4">
+                    <p className="text-xs text-amber-400/80 font-medium uppercase tracking-wider mb-2">
+                      {lang === "ru" ? "Значительные изменения (>30%)" : "Significant changes (>30%)"}
+                    </p>
+                    <div className="space-y-1.5">
+                      {strongChanges.map((sc) => (
+                        <div key={sc.label} className="flex items-center gap-2 text-sm">
+                          <span className={sc.positive ? "text-emerald-400" : "text-red-400"}>{sc.delta}</span>
+                          <span className="text-white/60">{sc.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-white/20 mt-3 italic">
+                      {lang === "ru"
+                        ? "Неделя ещё не завершена — значения могут измениться"
+                        : "Week is not over yet — values may change"}
+                    </p>
+                  </div>
                 )}
               </Section>
             )}
