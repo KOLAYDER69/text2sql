@@ -275,33 +275,6 @@ export default function DashboardPage() {
     [factLabel]: m.actual_replenishments,
   })) ?? [];
 
-  const cumulativeRevenueData = (() => {
-    if (!data) return [];
-    let cumPlan = 0, cumFact = 0;
-    return data.monthly.map((m) => {
-      cumPlan += m.planned_revenue;
-      cumFact += m.actual_revenue;
-      return {
-        label: m.label,
-        [planLabel]: cumPlan,
-        [factLabel]: m.isFuture && m.actual_revenue === 0 ? null : cumFact,
-      };
-    });
-  })();
-
-  const cumulativeReplData = (() => {
-    if (!data) return [];
-    let cumPlan = 0, cumFact = 0;
-    return data.monthly.map((m) => {
-      cumPlan += m.planned_replenishments;
-      cumFact += m.actual_replenishments;
-      return {
-        label: m.label,
-        [planLabel]: cumPlan,
-        [factLabel]: m.isFuture && m.actual_replenishments === 0 ? null : cumFact,
-      };
-    });
-  })();
 
   // ─── Render ───
   if (loading) {
@@ -579,44 +552,6 @@ export default function DashboardPage() {
               </Section>
             )}
 
-            {/* ─── Cumulative Annual Charts ─── */}
-            {data && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Cumulative revenue */}
-                <Section title={`${t("dash.annualChart")} — ${t("dash.revenue")}`}>
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={cumulativeRevenueData}>
-                        <CartesianGrid stroke="rgba(255,255,255,0.05)" />
-                        <XAxis dataKey="label" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} />
-                        <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} tickFormatter={(v: number) => fmtCurrency(v)} />
-                        <Tooltip {...tooltipStyle} cursor={{ fill: "rgba(255,255,255,0.05)" }} formatter={(value) => fmtCurrency(Number(value ?? 0))} />
-                        <Legend wrapperStyle={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }} />
-                        <Line type="monotone" dataKey={planLabel} stroke="#3b82f6" strokeWidth={2} strokeDasharray="8 4" dot={false} />
-                        <Line type="monotone" dataKey={factLabel} stroke="#34d399" strokeWidth={2.5} dot={{ r: 3, fill: "#34d399" }} connectNulls={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Section>
-
-                {/* Cumulative replenishments */}
-                <Section title={`${t("dash.annualChart")} — ${t("dash.replenishments")} (USDT)`}>
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={cumulativeReplData}>
-                        <CartesianGrid stroke="rgba(255,255,255,0.05)" />
-                        <XAxis dataKey="label" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} />
-                        <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} tickFormatter={(v: number) => fmtCurrency(v)} />
-                        <Tooltip {...tooltipStyle} cursor={{ fill: "rgba(255,255,255,0.05)" }} formatter={(value) => fmtCurrency(Number(value ?? 0))} />
-                        <Legend wrapperStyle={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }} />
-                        <Line type="monotone" dataKey={planLabel} stroke="#3b82f6" strokeWidth={2} strokeDasharray="8 4" dot={false} />
-                        <Line type="monotone" dataKey={factLabel} stroke="#fbbf24" strokeWidth={2.5} dot={{ r: 3, fill: "#fbbf24" }} connectNulls={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Section>
-              </div>
-            )}
 
             {/* ─── Key Metrics ─── */}
             {wm && (
