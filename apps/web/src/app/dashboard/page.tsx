@@ -285,7 +285,8 @@ export default function DashboardPage() {
 
   const wm = data?.weekMetrics;
   const ytd = data?.ytdPercent ?? 0;
-  const behindPlan = ytd < 90;
+  const hasPlans = (data?.yearTotals.planned_revenue ?? 0) > 0;
+  const behindPlan = hasPlans && ytd < 90;
 
   return (
     <div className="flex h-screen bg-[#0a0a0a] text-white">
