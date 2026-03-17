@@ -231,7 +231,7 @@ const translations = {
   "dash.fact": { ru: "Факт", en: "Actual" },
   "dash.ytdPercent": { ru: "% выполнения YTD", en: "YTD completion %" },
   "dash.monthlyChart": { ru: "План vs Факт по месяцам", en: "Plan vs Actual by Month" },
-  "dash.annualChart": { ru: "Кумулятивный план vs факт", en: "Cumulative Plan vs Actual" },
+  "dash.annualChart": { ru: "Годовой план vs факт", en: "Annual Plan vs Actual" },
   "dash.metrics": { ru: "Ключевые метрики", en: "Key Metrics" },
   "dash.weekOverWeek": { ru: "за неделю", en: "week over week" },
   "dash.operations": { ru: "Операции", en: "Operations" },
