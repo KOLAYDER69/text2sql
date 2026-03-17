@@ -129,8 +129,9 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<{ role: string } | null>(null);
 
-  // Plan editing
-  const [editingPlan, setEditingPlan] = useState<{ month: number; replenishments: string; revenue: string } | null>(null);
+  // Plan editing — full table mode
+  const [showPlanEditor, setShowPlanEditor] = useState(false);
+  const [planDraft, setPlanDraft] = useState<{ month: number; replenishments: string; revenue: string }[]>([]);
   const [savingPlan, setSavingPlan] = useState(false);
 
   // Task creation
@@ -169,22 +170,38 @@ export default function DashboardPage() {
 
   useEffect(() => { loadDashboard(); }, [loadDashboard]);
 
-  // ─── Plan save ───
-  async function savePlan() {
-    if (!editingPlan || !data) return;
+  // ─── Plan save (batch) ───
+  function openPlanEditor() {
+    if (!data) return;
+    setPlanDraft(data.monthly.map((m) => ({
+      month: m.month,
+      replenishments: String(m.planned_replenishments || ""),
+      revenue: String(m.planned_revenue || ""),
+    })));
+    setShowPlanEditor(true);
+  }
+
+  async function saveAllPlans() {
+    if (!data) return;
     setSavingPlan(true);
     try {
-      await fetch("/api/dashboard/plans", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          year: data.year,
-          month: editingPlan.month,
-          planned_replenishments: parseInt(editingPlan.replenishments, 10) || 0,
-          planned_revenue: parseFloat(editingPlan.revenue) || 0,
-        }),
-      });
-      setEditingPlan(null);
+      await Promise.all(
+        planDraft
+          .filter((p) => p.replenishments || p.revenue)
+          .map((p) =>
+            fetch("/api/dashboard/plans", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                year: data.year,
+                month: p.month,
+                planned_replenishments: parseInt(p.replenishments, 10) || 0,
+                planned_revenue: parseFloat(p.revenue) || 0,
+              }),
+            }),
+          ),
+      );
+      setShowPlanEditor(false);
       loadDashboard();
     } finally {
       setSavingPlan(false);
@@ -370,12 +387,23 @@ export default function DashboardPage() {
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-6xl mx-auto p-4 lg:p-8 space-y-8">
             {/* Header */}
-            <div>
-              <h1 className="text-2xl lg:text-3xl font-bold">{t("dash.title")}</h1>
-              {data && (
+            <div className="flex items-start justify-between">
+              <div>
+                <h1 className="text-2xl lg:text-3xl font-bold">{t("dash.title")}</h1>
                 <p className="text-white/40 mt-1">
-                  {t("dash.week")}: {formatWeekRange(data.thisMonday)} &middot; {data.year}
+                  {new Date().toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+                  {" "}{new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                  {data && (<> &middot; {t("dash.week")}: {formatWeekRange(data.thisMonday)}</>)}
                 </p>
+              </div>
+              {data && (
+                <button
+                  onClick={openPlanEditor}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition flex items-center gap-2"
+                >
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M2 14h3l9-9-3-3-9 9v3zM10 4l3 3" /></svg>
+                  {t("dash.editPlan")}
+                </button>
               )}
             </div>
 
@@ -469,51 +497,87 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* Edit plan buttons */}
-            {data && (
-              <div className="flex flex-wrap gap-2 -mt-4">
-                {data.monthly.map((m) => (
-                  <button
-                    key={m.month}
-                    onClick={() => setEditingPlan({
-                      month: m.month,
-                      replenishments: String(m.planned_replenishments),
-                      revenue: String(m.planned_revenue),
-                    })}
-                    className="text-xs px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-white/40 hover:text-white/60 transition"
-                  >
-                    {m.label}
-                  </button>
-                ))}
-                <span className="text-xs text-white/20 self-center ml-1">{t("dash.editPlan")}</span>
-              </div>
-            )}
-
-            {/* Plan edit modal */}
-            {editingPlan && (
-              <div className="-mt-4 bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
-                <p className="text-sm font-medium">
-                  {t("dash.editPlan")}: {data?.monthly.find((m) => m.month === editingPlan.month)?.label}
-                </p>
-                <div className="flex gap-4">
-                  <label className="flex-1">
-                    <span className="text-xs text-white/40">{t("dash.replenishments")}</span>
-                    <input type="number" value={editingPlan.replenishments} onChange={(e) => setEditingPlan({ ...editingPlan, replenishments: e.target.value })} className="mt-1 w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
-                  </label>
-                  <label className="flex-1">
-                    <span className="text-xs text-white/40">{t("dash.revenue")}</span>
-                    <input type="number" value={editingPlan.revenue} onChange={(e) => setEditingPlan({ ...editingPlan, revenue: e.target.value })} className="mt-1 w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
-                  </label>
+            {/* ─── Plan Editor (full table) ─── */}
+            {showPlanEditor && data && (
+              <Section title={`${t("dash.editPlan")} — ${data.year}`}>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-white/40 text-xs uppercase tracking-wider">
+                        <th className="text-left py-2 pr-2">{lang === "ru" ? "Месяц" : "Month"}</th>
+                        <th className="text-right py-2 px-2">{lang === "ru" ? "Доход план" : "Revenue plan"}</th>
+                        <th className="text-right py-2 px-2">{lang === "ru" ? "Доход факт" : "Revenue actual"}</th>
+                        <th className="text-right py-2 px-2">{lang === "ru" ? "Откл." : "Dev."}</th>
+                        <th className="text-right py-2 px-2">{lang === "ru" ? "Попол. план" : "Repl. plan"}</th>
+                        <th className="text-right py-2 px-2">{lang === "ru" ? "Попол. факт" : "Repl. actual"}</th>
+                        <th className="text-right py-2 pl-2">{lang === "ru" ? "Откл." : "Dev."}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {planDraft.map((p, idx) => {
+                        const actual = data.monthly[idx];
+                        const revPlan = parseFloat(p.revenue) || 0;
+                        const replPlan = parseInt(p.replenishments, 10) || 0;
+                        const revDev = revPlan > 0 ? Math.round(((actual.actual_revenue - revPlan) / revPlan) * 100) : 0;
+                        const replDev = replPlan > 0 ? Math.round(((actual.actual_replenishments - replPlan) / replPlan) * 100) : 0;
+                        const isCurrent = actual.month === new Date().getMonth() + 1;
+                        const isPast = actual.month < new Date().getMonth() + 1;
+                        return (
+                          <tr key={p.month} className={`border-t border-white/5 ${isCurrent ? "bg-blue-500/5" : ""}`}>
+                            <td className={`py-2 pr-2 font-medium ${isCurrent ? "text-blue-400" : isPast ? "text-white/60" : "text-white/30"}`}>
+                              {actual.label} {isCurrent && <span className="text-xs text-blue-400/60 ml-1">{lang === "ru" ? "сейчас" : "now"}</span>}
+                            </td>
+                            <td className="py-2 px-2">
+                              <input
+                                type="number"
+                                value={p.revenue}
+                                onChange={(e) => { const d = [...planDraft]; d[idx] = { ...d[idx], revenue: e.target.value }; setPlanDraft(d); }}
+                                placeholder="0"
+                                className="w-24 bg-white/5 border border-white/10 rounded px-2 py-1 text-right text-sm focus:outline-none focus:border-blue-500"
+                              />
+                            </td>
+                            <td className="py-2 px-2 text-right text-white/50">{actual.isFuture ? "—" : fmtCurrency(actual.actual_revenue)}</td>
+                            <td className={`py-2 px-2 text-right text-xs font-medium ${!revPlan || actual.isFuture ? "text-white/20" : revDev >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                              {revPlan > 0 && !actual.isFuture ? `${revDev >= 0 ? "+" : ""}${revDev}%` : "—"}
+                            </td>
+                            <td className="py-2 px-2">
+                              <input
+                                type="number"
+                                value={p.replenishments}
+                                onChange={(e) => { const d = [...planDraft]; d[idx] = { ...d[idx], replenishments: e.target.value }; setPlanDraft(d); }}
+                                placeholder="0"
+                                className="w-20 bg-white/5 border border-white/10 rounded px-2 py-1 text-right text-sm focus:outline-none focus:border-blue-500"
+                              />
+                            </td>
+                            <td className="py-2 px-2 text-right text-white/50">{actual.isFuture ? "—" : fmt(actual.actual_replenishments)}</td>
+                            <td className={`py-2 pl-2 text-right text-xs font-medium ${!replPlan || actual.isFuture ? "text-white/20" : replDev >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                              {replPlan > 0 && !actual.isFuture ? `${replDev >= 0 ? "+" : ""}${replDev}%` : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {/* Totals row */}
+                      <tr className="border-t-2 border-white/10 font-bold">
+                        <td className="py-2 pr-2">{lang === "ru" ? "Итого" : "Total"}</td>
+                        <td className="py-2 px-2 text-right">{fmtCurrency(planDraft.reduce((s, p) => s + (parseFloat(p.revenue) || 0), 0))}</td>
+                        <td className="py-2 px-2 text-right text-white/50">{fmtCurrency(data.yearTotals.actual_revenue)}</td>
+                        <td className="py-2 px-2" />
+                        <td className="py-2 px-2 text-right">{fmt(planDraft.reduce((s, p) => s + (parseInt(p.replenishments, 10) || 0), 0))}</td>
+                        <td className="py-2 px-2 text-right text-white/50">{fmt(data.yearTotals.actual_replenishments)}</td>
+                        <td className="py-2 pl-2" />
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={savePlan} disabled={savingPlan} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition disabled:opacity-50">
+                <div className="flex gap-2 mt-4">
+                  <button onClick={saveAllPlans} disabled={savingPlan} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition disabled:opacity-50">
                     {savingPlan ? t("dash.saving") : t("dash.save")}
                   </button>
-                  <button onClick={() => setEditingPlan(null)} className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm transition">
-                    {lang === "ru" ? "Отмена" : "Cancel"}
+                  <button onClick={() => setShowPlanEditor(false)} className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm transition">
+                    {lang === "ru" ? "Закрыть" : "Close"}
                   </button>
                 </div>
-              </div>
+              </Section>
             )}
 
             {/* ─── Cumulative Annual Charts ─── */}
