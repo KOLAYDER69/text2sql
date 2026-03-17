@@ -1184,38 +1184,35 @@ app.get("/api/dashboard", requireAuth, async (req, res) => {
       lastWeek: { operations: number; revenue: number; users: number; avg_check: number; new_users: number; deposits: number; deposit_volume: number; card_txns: number; subscriptions: number };
     } | null = null;
 
+    // Platform revenue types where amount (not fee) is the income
+    const PLATFORM_REVENUE_TYPES = "'SUBSCRIPTION','CARD_ISSUE','CARD_PROLONGATION'";
+
     try {
-      // Monthly actuals for the year:
-      // - replenishments = ACCOUNT_DEPOSIT (USDT + BTC converted to USDT + TRX converted to USDT)
-      // - revenue = SUM(fee) converted to USDT from ALL successful operations
-      // Uses currency_rates table for BTC→USDT and TRX→USDT conversion
+      // Monthly actuals:
+      // - replenishments = ACCOUNT_DEPOSIT volume (USDT + BTC→USDT + TRX→USDT)
+      // - revenue = SUM(fee) from all ops + SUM(amount) from SUBSCRIPTION/CARD_ISSUE/CARD_PROLONGATION
       const monthlyResult = await pool.query<{ m: number; deposits: string; rev: string; deposit_volume: string }>(
         `WITH rates AS (
            SELECT "from", "to", rate FROM currency_rates
            WHERE ("from" = 'BTC' AND "to" = 'USDT') OR ("from" = 'TRX' AND "to" = 'USDT')
          ),
          btc_rate AS (SELECT COALESCE((SELECT rate FROM rates WHERE "from" = 'BTC'), 84000) AS r),
-         trx_rate AS (SELECT COALESCE((SELECT rate FROM rates WHERE "from" = 'TRX'), 0.12) AS r)
+         trx_rate AS (SELECT COALESCE((SELECT rate FROM rates WHERE "from" = 'TRX'), 0.12) AS r),
+         to_usdt AS (
+           SELECT o.*,
+             CASE o.currency WHEN 'BTC' THEN (SELECT r FROM btc_rate) WHEN 'TRX' THEN (SELECT r FROM trx_rate) ELSE 1 END AS rate
+           FROM operations o
+           WHERE o.status = 'success' AND EXTRACT(YEAR FROM o.created_at) = $1
+         )
          SELECT
-           EXTRACT(MONTH FROM o.created_at)::int AS m,
-           COUNT(*) FILTER (WHERE o.type = 'ACCOUNT_DEPOSIT')::text AS deposits,
-           COALESCE(SUM(
-             CASE o.currency
-               WHEN 'BTC' THEN o.fee * (SELECT r FROM btc_rate)
-               WHEN 'TRX' THEN o.fee * (SELECT r FROM trx_rate)
-               ELSE o.fee
-             END
-           ), 0)::text AS rev,
-           COALESCE(SUM(
-             CASE o.currency
-               WHEN 'BTC' THEN o.amount * (SELECT r FROM btc_rate)
-               WHEN 'TRX' THEN o.amount * (SELECT r FROM trx_rate)
-               ELSE o.amount
-             END
-           ) FILTER (WHERE o.type = 'ACCOUNT_DEPOSIT'), 0)::text AS deposit_volume
-         FROM operations o
-         WHERE o.status = 'success'
-           AND EXTRACT(YEAR FROM o.created_at) = $1
+           EXTRACT(MONTH FROM created_at)::int AS m,
+           COUNT(*) FILTER (WHERE type = 'ACCOUNT_DEPOSIT')::text AS deposits,
+           COALESCE(
+             SUM(fee * rate)
+             + SUM(amount * rate) FILTER (WHERE type IN (${PLATFORM_REVENUE_TYPES}))
+           , 0)::text AS rev,
+           COALESCE(SUM(amount * rate) FILTER (WHERE type = 'ACCOUNT_DEPOSIT'), 0)::text AS deposit_volume
+         FROM to_usdt
          GROUP BY 1
          ORDER BY 1`,
         [year],
@@ -1253,13 +1250,12 @@ app.get("/api/dashboard", requireAuth, async (req, res) => {
          SELECT
            p.period,
            COUNT(o.id)::text AS ops,
-           COALESCE(SUM(
-             CASE o.currency
-               WHEN 'BTC' THEN o.fee * (SELECT r FROM btc_rate)
-               WHEN 'TRX' THEN o.fee * (SELECT r FROM trx_rate)
-               ELSE o.fee
-             END
-           ), 0)::text AS rev,
+           COALESCE(
+             SUM(CASE o.currency WHEN 'BTC' THEN o.fee * (SELECT r FROM btc_rate) WHEN 'TRX' THEN o.fee * (SELECT r FROM trx_rate) ELSE o.fee END)
+             + COALESCE(SUM(
+               CASE o.currency WHEN 'BTC' THEN o.amount * (SELECT r FROM btc_rate) WHEN 'TRX' THEN o.amount * (SELECT r FROM trx_rate) ELSE o.amount END
+             ) FILTER (WHERE o.type IN (${PLATFORM_REVENUE_TYPES})), 0)
+           , 0)::text AS rev,
            COUNT(DISTINCT o.user_id)::text AS users,
            CASE WHEN COUNT(o.id) > 0 THEN (
              SUM(CASE o.currency WHEN 'BTC' THEN o.fee * (SELECT r FROM btc_rate) WHEN 'TRX' THEN o.fee * (SELECT r FROM trx_rate) ELSE o.fee END)
@@ -1268,14 +1264,10 @@ app.get("/api/dashboard", requireAuth, async (req, res) => {
            (SELECT COUNT(*)::text FROM users u WHERE u.created_at >= p.start_date AND u.created_at < p.end_date) AS new_users,
            COUNT(*) FILTER (WHERE o.type = 'ACCOUNT_DEPOSIT')::text AS deposits,
            COALESCE(SUM(
-             CASE o.currency
-               WHEN 'BTC' THEN o.amount * (SELECT r FROM btc_rate)
-               WHEN 'TRX' THEN o.amount * (SELECT r FROM trx_rate)
-               ELSE o.amount
-             END
+             CASE o.currency WHEN 'BTC' THEN o.amount * (SELECT r FROM btc_rate) WHEN 'TRX' THEN o.amount * (SELECT r FROM trx_rate) ELSE o.amount END
            ) FILTER (WHERE o.type = 'ACCOUNT_DEPOSIT'), 0)::text AS deposit_volume,
            COUNT(*) FILTER (WHERE o.type = 'CARD_EXTERNAL')::text AS card_txns,
-           COUNT(*) FILTER (WHERE o.type = 'SUBSCRIPTION')::text AS subscriptions
+           COUNT(*) FILTER (WHERE o.type IN (${PLATFORM_REVENUE_TYPES}))::text AS subscriptions
          FROM periods p
          LEFT JOIN operations o ON o.created_at >= p.start_date AND o.created_at < p.end_date AND o.status = 'success'
          GROUP BY p.period, p.start_date, p.end_date`,

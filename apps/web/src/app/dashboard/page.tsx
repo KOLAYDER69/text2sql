@@ -15,7 +15,6 @@ import {
   Legend,
 } from "recharts";
 import { useI18n, LangSwitcher, type TranslationKey } from "@/lib/i18n";
-import { HoloLogo } from "../holo-logo";
 
 // ─── Types ───
 
@@ -326,8 +325,8 @@ export default function DashboardPage() {
       {/* Sidebar */}
       <aside className="hidden lg:flex w-64 bg-[#111] border-r border-white/10 flex-col">
         <div className="p-3">
-          <Link href="/" className="w-full flex items-center justify-center rounded-lg border border-white/10 hover:bg-white/5 transition">
-            <HoloLogo size="sm" />
+          <Link href="/" className="w-full flex items-center justify-center rounded-lg border border-white/10 hover:bg-white/5 transition py-3">
+            <span className="text-lg font-bold tracking-tight bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">LinkPay</span>
           </Link>
         </div>
         <nav className="px-3 space-y-1 flex-1">
@@ -353,7 +352,7 @@ export default function DashboardPage() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Mobile header */}
         <header className="border-b border-white/10 p-4 lg:hidden flex items-center justify-between">
-          <Link href="/"><HoloLogo size="sm" /></Link>
+          <Link href="/" className="text-lg font-bold tracking-tight bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">LinkPay</Link>
           <LangSwitcher />
         </header>
 
