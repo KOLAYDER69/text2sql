@@ -887,6 +887,17 @@ function HomeInner() {
 
         {/* Bottom nav */}
         <div className="border-t border-white/10 p-2 space-y-0.5">
+          {user?.role === "admin" && (
+            <Link
+              href="/dashboard"
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <rect x="2" y="2" width="5" height="5" rx="1" /><rect x="9" y="2" width="5" height="3" rx="1" /><rect x="2" y="9" width="5" height="3" rx="1" /><rect x="9" y="7" width="5" height="5" rx="1" />
+              </svg>
+              {t("nav.dashboard")}
+            </Link>
+          )}
           <Link
             href="/invites"
             className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition"

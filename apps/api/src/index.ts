@@ -45,6 +45,14 @@ import {
   createChatMessage,
   getOnlineUsers,
   markOnboardingSeen,
+  getDashboardPlans,
+  upsertDashboardPlan,
+  getDashboardTasks,
+  createDashboardTask,
+  updateDashboardTask,
+  deleteDashboardTask,
+  getDashboardNotes,
+  upsertDashboardNote,
 } from "@querybot/engine";
 import type { FollowUpMessage, SchemaDescriptions } from "@querybot/engine";
 import {
@@ -1074,6 +1082,261 @@ app.post("/api/user/onboarding", requireAuth, async (req, res) => {
     const session = getSession(req);
     await markOnboardingSeen(appPool, session.userId);
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
+});
+
+// ─── Dashboard ───
+
+// Helper: get Monday of the current week
+function getMonday(d: Date): string {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+  date.setDate(diff);
+  return date.toISOString().slice(0, 10);
+}
+
+// GET /api/dashboard?year=2026
+app.get("/api/dashboard", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    if (session.role !== "admin") {
+      res.status(403).json({ error: "Admin only" });
+      return;
+    }
+
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const now = new Date();
+    const thisMonday = getMonday(now);
+    const lastMonday = getMonday(new Date(now.getTime() - 7 * 86400000));
+
+    // Get plans from app DB
+    const plans = await getDashboardPlans(appPool, year);
+
+    // Get tasks for this week and last week
+    const [thisWeekTasks, lastWeekTasks, notes] = await Promise.all([
+      getDashboardTasks(appPool, thisMonday),
+      getDashboardTasks(appPool, lastMonday),
+      getDashboardNotes(appPool, thisMonday),
+    ]);
+
+    // Query actual metrics from linkpay DB
+    let monthlyActuals: { month: number; replenishments: number; revenue: number }[] = [];
+    let weekMetrics: {
+      thisWeek: { operations: number; revenue: number; users: number; avg_check: number; new_users: number; deposits: number; deposit_volume: number; card_txns: number; subscriptions: number };
+      lastWeek: { operations: number; revenue: number; users: number; avg_check: number; new_users: number; deposits: number; deposit_volume: number; card_txns: number; subscriptions: number };
+    } | null = null;
+
+    try {
+      // Monthly actuals for the year:
+      // - replenishments = ACCOUNT_DEPOSIT count (money coming into the platform)
+      // - revenue = SUM(fee) from ALL successful operations (platform earnings)
+      const monthlyResult = await pool.query<{ m: number; deposits: string; rev: string; deposit_volume: string }>(
+        `SELECT
+           EXTRACT(MONTH FROM created_at)::int AS m,
+           COUNT(*) FILTER (WHERE type = 'ACCOUNT_DEPOSIT')::text AS deposits,
+           COALESCE(SUM(fee), 0)::text AS rev,
+           COALESCE(SUM(amount) FILTER (WHERE type = 'ACCOUNT_DEPOSIT'), 0)::text AS deposit_volume
+         FROM operations
+         WHERE status = 'success'
+           AND EXTRACT(YEAR FROM created_at) = $1
+         GROUP BY 1
+         ORDER BY 1`,
+        [year],
+      );
+      monthlyActuals = monthlyResult.rows.map((r) => ({
+        month: r.m,
+        replenishments: parseInt(r.deposits, 10),
+        revenue: parseFloat(r.rev),
+      }));
+
+      // This week vs last week metrics
+      const weekResult = await pool.query<{
+        period: string;
+        ops: string;
+        rev: string;
+        users: string;
+        avg_check: string;
+        new_users: string;
+        deposits: string;
+        deposit_volume: string;
+        card_txns: string;
+        subscriptions: string;
+      }>(
+        `WITH periods AS (
+           SELECT 'this' AS period, $1::date AS start_date, ($1::date + 7) AS end_date
+           UNION ALL
+           SELECT 'last', $2::date, ($2::date + 7)
+         )
+         SELECT
+           p.period,
+           COUNT(o.id)::text AS ops,
+           COALESCE(SUM(o.fee), 0)::text AS rev,
+           COUNT(DISTINCT o.user_id)::text AS users,
+           CASE WHEN COUNT(o.id) > 0 THEN (SUM(o.fee) / COUNT(o.id))::text ELSE '0' END AS avg_check,
+           (SELECT COUNT(*)::text FROM users u WHERE u.created_at >= p.start_date AND u.created_at < p.end_date) AS new_users,
+           COUNT(*) FILTER (WHERE o.type = 'ACCOUNT_DEPOSIT')::text AS deposits,
+           COALESCE(SUM(o.amount) FILTER (WHERE o.type = 'ACCOUNT_DEPOSIT'), 0)::text AS deposit_volume,
+           COUNT(*) FILTER (WHERE o.type = 'CARD_EXTERNAL')::text AS card_txns,
+           COUNT(*) FILTER (WHERE o.type = 'SUBSCRIPTION')::text AS subscriptions
+         FROM periods p
+         LEFT JOIN operations o ON o.created_at >= p.start_date AND o.created_at < p.end_date AND o.status = 'success'
+         GROUP BY p.period, p.start_date, p.end_date`,
+        [thisMonday, lastMonday],
+      );
+
+      const thisW = weekResult.rows.find((r) => r.period === "this");
+      const lastW = weekResult.rows.find((r) => r.period === "last");
+      const parseWeek = (w: typeof thisW) => ({
+        operations: parseInt(w?.ops ?? "0", 10),
+        revenue: parseFloat(w?.rev ?? "0"),
+        users: parseInt(w?.users ?? "0", 10),
+        avg_check: parseFloat(w?.avg_check ?? "0"),
+        new_users: parseInt(w?.new_users ?? "0", 10),
+        deposits: parseInt(w?.deposits ?? "0", 10),
+        deposit_volume: parseFloat(w?.deposit_volume ?? "0"),
+        card_txns: parseInt(w?.card_txns ?? "0", 10),
+        subscriptions: parseInt(w?.subscriptions ?? "0", 10),
+      });
+      weekMetrics = {
+        thisWeek: parseWeek(thisW),
+        lastWeek: parseWeek(lastW),
+      };
+    } catch (err) {
+      console.error("Dashboard metrics query failed:", err);
+    }
+
+    // Build response
+    const monthNames = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"];
+    const currentMonth = now.getMonth() + 1;
+
+    const monthly = Array.from({ length: 12 }, (_, i) => {
+      const m = i + 1;
+      const plan = plans.find((p) => p.month === m);
+      const actual = monthlyActuals.find((a) => a.month === m);
+      return {
+        month: m,
+        label: monthNames[i],
+        planned_replenishments: plan ? Number(plan.planned_replenishments) : 0,
+        actual_replenishments: actual?.replenishments ?? 0,
+        planned_revenue: plan ? Number(plan.planned_revenue) : 0,
+        actual_revenue: actual?.revenue ?? 0,
+        isFuture: m > currentMonth,
+      };
+    });
+
+    const yearTotals = {
+      planned_replenishments: monthly.reduce((s, m) => s + m.planned_replenishments, 0),
+      actual_replenishments: monthly.reduce((s, m) => s + m.actual_replenishments, 0),
+      planned_revenue: monthly.reduce((s, m) => s + m.planned_revenue, 0),
+      actual_revenue: monthly.reduce((s, m) => s + m.actual_revenue, 0),
+    };
+
+    // Plan completion for months up to current
+    const ytdPlanned = monthly.filter((m) => !m.isFuture).reduce((s, m) => s + m.planned_revenue, 0);
+    const ytdActual = monthly.filter((m) => !m.isFuture).reduce((s, m) => s + m.actual_revenue, 0);
+    const ytdPercent = ytdPlanned > 0 ? Math.round((ytdActual / ytdPlanned) * 100) : 0;
+
+    res.json({
+      year,
+      thisMonday,
+      lastMonday,
+      monthly,
+      yearTotals,
+      ytdPercent,
+      weekMetrics,
+      thisWeekTasks,
+      lastWeekTasks,
+      notes: {
+        problems: notes.find((n) => n.section === "problems")?.content ?? "",
+        insights: notes.find((n) => n.section === "insights")?.content ?? "",
+      },
+    });
+  } catch (err) {
+    console.error("dashboard error:", err);
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
+});
+
+// PUT /api/dashboard/plans — upsert monthly plan
+app.put("/api/dashboard/plans", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    if (session.role !== "admin") {
+      res.status(403).json({ error: "Admin only" });
+      return;
+    }
+    const { year, month, planned_replenishments, planned_revenue } = req.body;
+    const plan = await upsertDashboardPlan(appPool, {
+      year, month,
+      planned_replenishments: planned_replenishments ?? 0,
+      planned_revenue: planned_revenue ?? 0,
+    });
+    res.json({ plan });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
+});
+
+// POST /api/dashboard/tasks — create task
+app.post("/api/dashboard/tasks", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    if (session.role !== "admin") {
+      res.status(403).json({ error: "Admin only" });
+      return;
+    }
+    const task = await createDashboardTask(appPool, req.body);
+    res.json({ task });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
+});
+
+// PUT /api/dashboard/tasks/:id — update task
+app.put("/api/dashboard/tasks/:id", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    if (session.role !== "admin") {
+      res.status(403).json({ error: "Admin only" });
+      return;
+    }
+    const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const task = await updateDashboardTask(appPool, parseInt(idParam, 10), req.body);
+    res.json({ task });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
+});
+
+// DELETE /api/dashboard/tasks/:id
+app.delete("/api/dashboard/tasks/:id", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    if (session.role !== "admin") {
+      res.status(403).json({ error: "Admin only" });
+      return;
+    }
+    const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const ok = await deleteDashboardTask(appPool, parseInt(idParam, 10));
+    res.json({ ok });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
+});
+
+// PUT /api/dashboard/notes — upsert note (problems/insights)
+app.put("/api/dashboard/notes", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    if (session.role !== "admin") {
+      res.status(403).json({ error: "Admin only" });
+      return;
+    }
+    const note = await upsertDashboardNote(appPool, req.body);
+    res.json({ note });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
   }

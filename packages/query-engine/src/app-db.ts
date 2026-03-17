@@ -662,6 +662,176 @@ export async function getOnlineUsers(
   return rows;
 }
 
+// ─── Dashboard Plans ───
+
+export type AppDashboardPlan = {
+  id: number;
+  year: number;
+  month: number;
+  planned_replenishments: number;
+  planned_revenue: string; // numeric comes as string from pg
+  created_at: string;
+  updated_at: string;
+};
+
+export async function getDashboardPlans(
+  pool: Pool,
+  year: number,
+): Promise<AppDashboardPlan[]> {
+  const { rows } = await pool.query<AppDashboardPlan>(
+    "SELECT * FROM app_dashboard_plans WHERE year = $1 ORDER BY month",
+    [year],
+  );
+  return rows;
+}
+
+export async function upsertDashboardPlan(
+  pool: Pool,
+  data: { year: number; month: number; planned_replenishments: number; planned_revenue: number },
+): Promise<AppDashboardPlan> {
+  const { rows } = await pool.query<AppDashboardPlan>(
+    `INSERT INTO app_dashboard_plans (year, month, planned_replenishments, planned_revenue)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (year, month)
+     DO UPDATE SET planned_replenishments = $3, planned_revenue = $4, updated_at = now()
+     RETURNING *`,
+    [data.year, data.month, data.planned_replenishments, data.planned_revenue],
+  );
+  return rows[0];
+}
+
+// ─── Dashboard Tasks ───
+
+export type AppDashboardTask = {
+  id: number;
+  title: string;
+  description: string | null;
+  assignee: string | null;
+  due_date: string | null;
+  status: "planned" | "in_progress" | "completed" | "blocked";
+  blocker: string | null;
+  new_due_date: string | null;
+  week_start: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function getDashboardTasks(
+  pool: Pool,
+  weekStart: string,
+): Promise<AppDashboardTask[]> {
+  const { rows } = await pool.query<AppDashboardTask>(
+    "SELECT * FROM app_dashboard_tasks WHERE week_start = $1 ORDER BY due_date ASC NULLS LAST, created_at ASC",
+    [weekStart],
+  );
+  return rows;
+}
+
+export async function createDashboardTask(
+  pool: Pool,
+  data: {
+    title: string;
+    description?: string | null;
+    assignee?: string | null;
+    due_date?: string | null;
+    status?: string;
+    week_start: string;
+  },
+): Promise<AppDashboardTask> {
+  const { rows } = await pool.query<AppDashboardTask>(
+    `INSERT INTO app_dashboard_tasks (title, description, assignee, due_date, status, week_start)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING *`,
+    [
+      data.title,
+      data.description ?? null,
+      data.assignee ?? null,
+      data.due_date ?? null,
+      data.status ?? "planned",
+      data.week_start,
+    ],
+  );
+  return rows[0];
+}
+
+export async function updateDashboardTask(
+  pool: Pool,
+  id: number,
+  data: {
+    title?: string;
+    description?: string | null;
+    assignee?: string | null;
+    due_date?: string | null;
+    status?: string;
+    blocker?: string | null;
+    new_due_date?: string | null;
+  },
+): Promise<AppDashboardTask> {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  let idx = 1;
+
+  if (data.title !== undefined) { sets.push(`title = $${idx++}`); vals.push(data.title); }
+  if (data.description !== undefined) { sets.push(`description = $${idx++}`); vals.push(data.description); }
+  if (data.assignee !== undefined) { sets.push(`assignee = $${idx++}`); vals.push(data.assignee); }
+  if (data.due_date !== undefined) { sets.push(`due_date = $${idx++}`); vals.push(data.due_date); }
+  if (data.status !== undefined) { sets.push(`status = $${idx++}`); vals.push(data.status); }
+  if (data.blocker !== undefined) { sets.push(`blocker = $${idx++}`); vals.push(data.blocker); }
+  if (data.new_due_date !== undefined) { sets.push(`new_due_date = $${idx++}`); vals.push(data.new_due_date); }
+  sets.push(`updated_at = now()`);
+
+  vals.push(id);
+  const { rows } = await pool.query<AppDashboardTask>(
+    `UPDATE app_dashboard_tasks SET ${sets.join(", ")} WHERE id = $${idx} RETURNING *`,
+    vals,
+  );
+  return rows[0];
+}
+
+export async function deleteDashboardTask(
+  pool: Pool,
+  id: number,
+): Promise<boolean> {
+  const result = await pool.query("DELETE FROM app_dashboard_tasks WHERE id = $1", [id]);
+  return (result.rowCount ?? 0) > 0;
+}
+
+// ─── Dashboard Notes ───
+
+export type AppDashboardNote = {
+  id: number;
+  week_start: string;
+  section: "problems" | "insights";
+  content: string;
+  created_at: string;
+};
+
+export async function getDashboardNotes(
+  pool: Pool,
+  weekStart: string,
+): Promise<AppDashboardNote[]> {
+  const { rows } = await pool.query<AppDashboardNote>(
+    "SELECT * FROM app_dashboard_notes WHERE week_start = $1 ORDER BY section",
+    [weekStart],
+  );
+  return rows;
+}
+
+export async function upsertDashboardNote(
+  pool: Pool,
+  data: { week_start: string; section: string; content: string },
+): Promise<AppDashboardNote> {
+  const { rows } = await pool.query<AppDashboardNote>(
+    `INSERT INTO app_dashboard_notes (week_start, section, content)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (week_start, section)
+     DO UPDATE SET content = $3
+     RETURNING *`,
+    [data.week_start, data.section, data.content],
+  );
+  return rows[0];
+}
+
 // ─── Onboarding ───
 
 export async function markOnboardingSeen(
