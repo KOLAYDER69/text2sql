@@ -1172,7 +1172,7 @@ app.get("/api/dashboard", requireAuth, async (req, res) => {
       );
       monthlyActuals = monthlyResult.rows.map((r) => ({
         month: r.m,
-        replenishments: parseInt(r.deposits, 10),
+        replenishments: parseFloat(r.deposit_volume),
         revenue: parseFloat(r.rev),
       }));
 

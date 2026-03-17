@@ -414,7 +414,7 @@ export default function DashboardPage() {
                   label={t("dash.replenishments")}
                   plan={data.yearTotals.planned_replenishments}
                   fact={data.yearTotals.actual_replenishments}
-                  formatFn={fmt}
+                  formatFn={fmtCurrency}
                   planLabel={t("dash.plan")}
                 />
                 {/* Revenue YTD */}
@@ -477,15 +477,15 @@ export default function DashboardPage() {
                   </div>
                 </Section>
 
-                {/* Replenishments bar chart */}
-                <Section title={`${t("dash.replenishments")} — ${t("dash.planFact")}`}>
+                {/* Replenishments bar chart (USDT volume) */}
+                <Section title={`${t("dash.replenishments")} (USDT) — ${t("dash.planFact")}`}>
                   <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={replBarData} barGap={2}>
                         <CartesianGrid stroke="rgba(255,255,255,0.05)" />
                         <XAxis dataKey="label" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} />
-                        <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} />
-                        <Tooltip {...tooltipStyle} />
+                        <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} tickFormatter={(v: number) => fmtCurrency(v)} />
+                        <Tooltip {...tooltipStyle} formatter={(value) => fmtCurrency(Number(value ?? 0))} />
                         <Legend wrapperStyle={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }} />
                         <Bar dataKey={planLabel} fill="#3b82f6" radius={[4, 4, 0, 0]} opacity={0.5} />
                         <Bar dataKey={factLabel} fill="#fbbf24" radius={[4, 4, 0, 0]} />
@@ -600,14 +600,14 @@ export default function DashboardPage() {
                 </Section>
 
                 {/* Cumulative replenishments */}
-                <Section title={`${t("dash.annualChart")} — ${t("dash.replenishments")}`}>
+                <Section title={`${t("dash.annualChart")} — ${t("dash.replenishments")} (USDT)`}>
                   <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={cumulativeReplData}>
                         <CartesianGrid stroke="rgba(255,255,255,0.05)" />
                         <XAxis dataKey="label" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} />
-                        <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} />
-                        <Tooltip {...tooltipStyle} />
+                        <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} tickFormatter={(v: number) => fmtCurrency(v)} />
+                        <Tooltip {...tooltipStyle} formatter={(value) => fmtCurrency(Number(value ?? 0))} />
                         <Legend wrapperStyle={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }} />
                         <Line type="monotone" dataKey={planLabel} stroke="#3b82f6" strokeWidth={2} strokeDasharray="8 4" dot={false} />
                         <Line type="monotone" dataKey={factLabel} stroke="#fbbf24" strokeWidth={2.5} dot={{ r: 3, fill: "#fbbf24" }} connectNulls={false} />
