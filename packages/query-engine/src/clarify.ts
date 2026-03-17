@@ -23,12 +23,16 @@ export async function generateClarifications(
   try {
     const schemaText = buildSchemaText(tables, descriptions);
     const relationsText = buildRelationsText(relations);
+    const today = new Date().toISOString().slice(0, 10);
 
     const { text } = await generateText({
       model: anthropic("claude-sonnet-4-6"),
       temperature: 0,
       maxTokens: 512,
       system: `You are a database expert assistant. Your task is to analyze a user's question about a database and determine if it is ambiguous or needs clarification before generating SQL.
+
+TODAY: ${today}
+Use this date as reference for all relative time expressions and year options.
 
 WHEN TO ASK clarifying questions:
 - Ambiguous time range (e.g. "show transactions" — which period?)
