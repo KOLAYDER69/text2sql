@@ -69,9 +69,9 @@ function fmt(n: number): string {
 }
 
 function fmtCurrency(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M \u20BD";
-  if (n >= 1_000) return (n / 1_000).toFixed(0) + "K \u20BD";
-  return n.toLocaleString("ru-RU") + " \u20BD";
+  if (n >= 1_000_000) return "$" + (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1_000) return "$" + (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
+  return "$" + n.toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
 
 function delta(current: number, previous: number): { value: string; positive: boolean; zero: boolean } {
