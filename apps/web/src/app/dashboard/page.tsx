@@ -392,8 +392,7 @@ export default function DashboardPage() {
                 <h1 className="text-2xl lg:text-3xl font-bold">{t("dash.title")}</h1>
                 <p className="text-white/40 mt-1">
                   {new Date().toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
-                  {" "}{new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
-                  {data && (<> &middot; {t("dash.week")}: {formatWeekRange(data.thisMonday)}</>)}
+                  {", "}{new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
                 </p>
               </div>
               {data && (
