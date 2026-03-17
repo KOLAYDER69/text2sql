@@ -45,6 +45,9 @@ import {
   createChatMessage,
   getOnlineUsers,
   markOnboardingSeen,
+  getFeatureRequests,
+  createFeatureRequest,
+  updateFeatureRequest,
   getDashboardPlans,
   upsertDashboardPlan,
   getDashboardTasks,
@@ -1082,6 +1085,53 @@ app.post("/api/user/onboarding", requireAuth, async (req, res) => {
     const session = getSession(req);
     await markOnboardingSeen(appPool, session.userId);
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
+});
+
+// ─── Feature Requests ───
+
+app.get("/api/features", requireAuth, async (_req, res) => {
+  try {
+    const features = await getFeatureRequests(appPool);
+    res.json({ features });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
+});
+
+app.post("/api/features", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    const { page, x, y, description } = req.body;
+    if (!description?.trim()) {
+      res.status(400).json({ error: "description is required" });
+      return;
+    }
+    const feature = await createFeatureRequest(appPool, {
+      user_id: session.userId,
+      page: page || "/",
+      x: x || 0,
+      y: y || 0,
+      description: description.trim(),
+    });
+    res.json({ feature });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
+  }
+});
+
+app.put("/api/features/:id", requireAuth, async (req, res) => {
+  try {
+    const session = getSession(req);
+    if (session.role !== "admin") {
+      res.status(403).json({ error: "Admin only" });
+      return;
+    }
+    const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const feature = await updateFeatureRequest(appPool, parseInt(idParam, 10), req.body);
+    res.json({ feature });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : "Internal error" });
   }

@@ -662,6 +662,67 @@ export async function getOnlineUsers(
   return rows;
 }
 
+// ─── Feature Requests ───
+
+export type AppFeatureRequest = {
+  id: number;
+  user_id: number;
+  page: string;
+  x: number;
+  y: number;
+  description: string;
+  status: "open" | "done" | "rejected";
+  admin_comment: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AppFeatureRequestWithUser = AppFeatureRequest & {
+  username: string | null;
+  first_name: string;
+};
+
+export async function getFeatureRequests(pool: Pool): Promise<AppFeatureRequestWithUser[]> {
+  const { rows } = await pool.query<AppFeatureRequestWithUser>(
+    `SELECT f.*, u.username, u.first_name
+     FROM app_feature_requests f
+     JOIN app_users u ON u.id = f.user_id
+     ORDER BY CASE f.status WHEN 'open' THEN 0 WHEN 'done' THEN 1 ELSE 2 END, f.created_at DESC`,
+  );
+  return rows;
+}
+
+export async function createFeatureRequest(
+  pool: Pool,
+  data: { user_id: number; page: string; x: number; y: number; description: string },
+): Promise<AppFeatureRequest> {
+  const { rows } = await pool.query<AppFeatureRequest>(
+    `INSERT INTO app_feature_requests (user_id, page, x, y, description)
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    [data.user_id, data.page, data.x, data.y, data.description],
+  );
+  return rows[0];
+}
+
+export async function updateFeatureRequest(
+  pool: Pool,
+  id: number,
+  data: { status?: string; admin_comment?: string | null },
+): Promise<AppFeatureRequest> {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  let idx = 1;
+  if (data.status !== undefined) { sets.push(`status = $${idx++}`); vals.push(data.status); }
+  if (data.admin_comment !== undefined) { sets.push(`admin_comment = $${idx++}`); vals.push(data.admin_comment); }
+  sets.push("updated_at = now()");
+  vals.push(id);
+  const { rows } = await pool.query<AppFeatureRequest>(
+    `UPDATE app_feature_requests SET ${sets.join(", ")} WHERE id = $${idx} RETURNING *`,
+    vals,
+  );
+  return rows[0];
+}
+
 // ─── Dashboard Plans ───
 
 export type AppDashboardPlan = {
