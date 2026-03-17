@@ -1111,6 +1111,11 @@ app.get("/api/dashboard", requireAuth, async (req, res) => {
     const now = new Date();
     const thisMonday = getMonday(now);
     const lastMonday = getMonday(new Date(now.getTime() - 7 * 86400000));
+    // For fair week-over-week comparison: compare same # of days
+    // e.g. if today is Tuesday 17:40, compare Mon-Tue(17:40) this week vs Mon-Tue(17:40) last week
+    const nowISO = now.toISOString();
+    const daysSinceMonday = (now.getTime() - new Date(thisMonday).getTime()) / 86400000;
+    const lastWeekSamePoint = new Date(new Date(lastMonday).getTime() + daysSinceMonday * 86400000).toISOString();
 
     // Get plans from app DB
     const plans = await getDashboardPlans(appPool, year);
@@ -1191,9 +1196,9 @@ app.get("/api/dashboard", requireAuth, async (req, res) => {
          btc_rate AS (SELECT COALESCE((SELECT rate FROM rates WHERE "from" = 'BTC'), 84000) AS r),
          trx_rate AS (SELECT COALESCE((SELECT rate FROM rates WHERE "from" = 'TRX'), 0.12) AS r),
          periods AS (
-           SELECT 'this' AS period, $1::date AS start_date, ($1::date + 7) AS end_date
+           SELECT 'this' AS period, $1::date AS start_date, $3::timestamptz AS end_date
            UNION ALL
-           SELECT 'last', $2::date, ($2::date + 7)
+           SELECT 'last', $2::date, $4::timestamptz
          )
          SELECT
            p.period,
@@ -1224,7 +1229,7 @@ app.get("/api/dashboard", requireAuth, async (req, res) => {
          FROM periods p
          LEFT JOIN operations o ON o.created_at >= p.start_date AND o.created_at < p.end_date AND o.status = 'success'
          GROUP BY p.period, p.start_date, p.end_date`,
-        [thisMonday, lastMonday],
+        [thisMonday, lastMonday, nowISO, lastWeekSamePoint],
       );
 
       const thisW = weekResult.rows.find((r) => r.period === "this");

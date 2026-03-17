@@ -631,6 +631,11 @@ export default function DashboardPage() {
                   <MetricCard label={t("dash.newUsers")} current={wm.thisWeek.new_users} previous={wm.lastWeek.new_users} formatFn={fmt} />
                   <MetricCard label={t("dash.avgCheck")} current={wm.thisWeek.avg_check} previous={wm.lastWeek.avg_check} formatFn={fmtCurrency} />
                 </div>
+                <p className="text-xs text-white/20 mt-3">
+                  {lang === "ru"
+                    ? "Сравнение за одинаковый период: пн–сейчас этой недели vs пн–тот же момент прошлой"
+                    : "Comparing equal periods: Mon–now this week vs Mon–same point last week"}
+                </p>
                 {!wm.thisWeek.operations && !wm.lastWeek.operations && (
                   <p className="text-sm text-amber-400/60 mt-3">{t("dash.noData")}</p>
                 )}
