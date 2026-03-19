@@ -15,11 +15,23 @@ querybot/
 └── scripts/                 # SQL-миграции
 ```
 
+## Поддерживаемые базы данных
+
+- **PostgreSQL** 15+ (полная поддержка: enum, CHECK constraints, отношения)
+- **MySQL** 8+ (enum, отношения, information_schema)
+- **SQLite** 3+ (базовая интроспекция, PRAGMA)
+
+Тип БД определяется автоматически по формату DATABASE_URL:
+- `postgresql://...` → PostgreSQL
+- `mysql://...` или `mysql2://...` → MySQL
+- `path/to/file.db` или `sqlite://path` → SQLite
+
 ## Требования
 
 - Node.js 22+
 - npm 10+
-- PostgreSQL 15+ (две базы данных)
+- PostgreSQL 15+ / MySQL 8+ / SQLite 3+ (для бизнес-данных)
+- PostgreSQL (для app-базы — хранение пользователей, истории)
 - Anthropic API ключ (Claude)
 - Telegram Bot Token (через @BotFather)
 
@@ -258,11 +270,26 @@ sudo systemctl enable --now querybot-api querybot-bot
 
 ## Как подключить свою базу данных
 
-text2SQL автоматически читает схему любой PostgreSQL базы. Просто укажите DATABASE_URL вашей базы — система сама:
+text2SQL автоматически читает схему любой базы данных. Просто укажите DATABASE_URL — система сама:
 
+- Определит тип БД (PostgreSQL, MySQL, SQLite) по формату URL
 - Прочитает все таблицы и колонки
-- Распарсит enum-значения и CHECK-ограничения
+- Распарсит enum-значения (PostgreSQL: pg_enum + CHECK, MySQL: COLUMN_TYPE)
 - Определит связи между таблицами по naming convention (user_id → users.id)
+- Сгенерирует SQL на правильном диалекте (PostgreSQL/MySQL/SQLite синтаксис)
+
+Примеры DATABASE_URL:
+```
+# PostgreSQL
+DATABASE_URL=postgresql://user:pass@host:5432/mydb
+
+# MySQL
+DATABASE_URL=mysql://user:pass@host:3306/mydb
+
+# SQLite
+DATABASE_URL=sqlite:///path/to/database.db
+DATABASE_URL=/path/to/database.sqlite
+```
 
 Для лучших результатов можно добавить описания таблиц и колонок через интерфейс "Training" в веб-приложении.
 

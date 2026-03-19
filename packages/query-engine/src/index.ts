@@ -9,6 +9,7 @@ import { buildChartConfig } from "./chart";
 import { translateQuestion } from "./translate";
 import type { SchemaDescriptions } from "./prompt";
 import type { QueryResponse } from "./types";
+import type { DbDriver, DbType } from "./driver";
 
 export { getSchema, clearSchemaCache } from "./introspect";
 export { generateSQL, suggestQueryFix } from "./generate";
@@ -28,7 +29,10 @@ export { generateDescriptionSuggestions } from "./suggest";
 export type { ClarifyQuestion, ClarifyResult } from "./clarify";
 export * from "./types";
 export * from "./app-db";
+export { createDriver, detectDbType } from "./driver";
+export type { DbDriver, DbType } from "./driver";
 
+/** Create a PostgreSQL pool (legacy, for backwards compatibility) */
 export function createPool(databaseUrl: string): pg.Pool {
   return new pg.Pool({
     connectionString: databaseUrl,
@@ -37,6 +41,7 @@ export function createPool(databaseUrl: string): pg.Pool {
   });
 }
 
+/** Create an app database pool (always PostgreSQL) */
 export function createAppPool(appDatabaseUrl: string): pg.Pool {
   const isLocalhost = appDatabaseUrl.includes("@localhost") || appDatabaseUrl.includes("@127.0.0.1");
   return new pg.Pool({
@@ -118,5 +123,49 @@ export async function query(
       executionMs: 0,
       error: err instanceof Error ? err.message : "Unknown error",
     };
+  }
+}
+
+/** Full pipeline using universal DbDriver (works with PostgreSQL, MySQL, SQLite) */
+export async function queryWithDriver(
+  driver: DbDriver,
+  question: string,
+  descriptions?: SchemaDescriptions,
+): Promise<QueryResponse> {
+  const [schema, translated] = await Promise.all([
+    driver.introspect(),
+    translateQuestion(question),
+  ]);
+  const { tables, relations } = schema;
+
+  const sql = await generateSQL(translated.english, tables, relations, descriptions, driver.type);
+
+  const validation = validateSQL(sql);
+  if (!validation.valid) {
+    return { question, sql, rows: [], rowCount: 0, fields: [], executionMs: 0, error: validation.error };
+  }
+
+  try {
+    const result = await driver.execute(sql);
+
+    let analysis: string | undefined;
+    try {
+      analysis = await analyzeResults(question, result.sql, result.rows, result.fields, result.rowCount, tables);
+    } catch { /* non-critical */ }
+
+    const chart = buildChartConfig(result.fields, result.rows) ?? undefined;
+
+    return {
+      question,
+      sql: result.sql,
+      rows: result.rows,
+      rowCount: result.rowCount,
+      fields: result.fields,
+      executionMs: result.executionMs,
+      analysis,
+      chart,
+    };
+  } catch (err) {
+    return { question, sql, rows: [], rowCount: 0, fields: [], executionMs: 0, error: err instanceof Error ? err.message : "Unknown error" };
   }
 }

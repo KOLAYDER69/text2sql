@@ -1,17 +1,25 @@
 import { generateText } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import type { TableSchema, InferredRelation } from "./types";
+import type { DbType } from "./driver";
 import { buildSystemPrompt, buildSchemaText, buildRelationsText, type SchemaDescriptions } from "./prompt";
+
+const DB_LABELS: Record<DbType, string> = {
+  postgresql: "PostgreSQL",
+  mysql: "MySQL",
+  sqlite: "SQLite",
+};
 
 export async function generateSQL(
   question: string,
   tables: TableSchema[],
   relations: InferredRelation[] = [],
   descriptions?: SchemaDescriptions,
+  dbType: DbType = "postgresql",
 ): Promise<string> {
   const { text } = await generateText({
     model: anthropic("claude-sonnet-4-6"),
-    system: buildSystemPrompt(tables, relations, descriptions),
+    system: buildSystemPrompt(tables, relations, descriptions, dbType),
     prompt: question,
     maxTokens: 1024,
     temperature: 0,
@@ -38,13 +46,15 @@ export async function suggestQueryFix(
   tables: TableSchema[],
   relations: InferredRelation[],
   descriptions?: SchemaDescriptions,
+  dbType: DbType = "postgresql",
 ): Promise<FixSuggestion> {
   const schemaText = buildSchemaText(tables, descriptions);
   const relationsText = buildRelationsText(relations);
+  const dbLabel = DB_LABELS[dbType];
 
   const { text } = await generateText({
     model: anthropic("claude-sonnet-4-6"),
-    system: `You are a PostgreSQL expert. The user ran a query that failed. Analyze the error and suggest a fix.
+    system: `You are a ${dbLabel} expert. The user ran a query that failed. Analyze the error and suggest a fix.
 
 Available schema:
 ${schemaText}
