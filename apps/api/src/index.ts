@@ -70,20 +70,30 @@ import {
   type TelegramLoginData,
 } from "./telegram-auth.js";
 
+// ─── Docker mode detection ───
+
+const isDockerMode = process.env.DOCKER_MODE === "1";
+
 // ─── Env checks ───
 
-const appDatabaseUrl = process.env.APP_DATABASE_URL;
-const databaseUrl = process.env.DATABASE_URL;
+let appDatabaseUrl = process.env.APP_DATABASE_URL;
+let databaseUrl = process.env.DATABASE_URL;
 const botToken = process.env.TELEGRAM_BOT_TOKEN;
-const botName = process.env.NEXT_PUBLIC_TELEGRAM_BOT_NAME || "leadsaibot";
+const botName = process.env.NEXT_PUBLIC_TELEGRAM_BOT_NAME || "text2sql_bot";
 
-if (!appDatabaseUrl) throw new Error("APP_DATABASE_URL is required");
-if (!databaseUrl) throw new Error("DATABASE_URL is required");
+if (isDockerMode) {
+  // In Docker, app DB is the bundled PostgreSQL
+  appDatabaseUrl = appDatabaseUrl || "postgresql://text2sql:text2sql@db:5432/text2sql";
+  // DATABASE_URL can be configured later via setup wizard
+} else {
+  if (!appDatabaseUrl) throw new Error("APP_DATABASE_URL is required");
+  if (!databaseUrl) throw new Error("DATABASE_URL is required");
+}
 
 // ─── Pools (created once) ───
 
-const appPool = createAppPool(appDatabaseUrl);
-const pool = createPool(databaseUrl);
+const appPool = createAppPool(appDatabaseUrl!);
+let pool = databaseUrl ? createPool(databaseUrl) : null;
 
 // ─── Descriptions cache (2 min) ───
 
@@ -126,11 +136,50 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// ─── Docker mode: load config from DB ───
+
+async function loadDockerConfig() {
+  if (!isDockerMode) return;
+  try {
+    const result = await appPool.query("SELECT key, value FROM app_config");
+    for (const row of result.rows) {
+      if (row.key === "database_url" && row.value) {
+        process.env.DATABASE_URL = row.value;
+        databaseUrl = row.value;
+        pool = createPool(row.value);
+      }
+      if (row.key === "anthropic_api_key" && row.value) {
+        process.env.ANTHROPIC_API_KEY = row.value;
+      }
+    }
+  } catch {
+    // app_config table might not exist yet, that's fine
+  }
+}
+
+// Load saved config on startup
+loadDockerConfig();
+
 // ─── Express app ───
 
 const app = express();
 app.use(express.json());
 app.use(cookieParser());
+
+// ─── Docker setup routes (before auth!) ───
+
+if (isDockerMode) {
+  const { createSetupRouter } = await import("./setup.js");
+  app.use("/api/setup", createSetupRouter(appPool));
+
+  // Reload pool after config change
+  app.use("/api/setup/configure", async (_req, _res, next) => {
+    if (process.env.DATABASE_URL && !pool) {
+      pool = createPool(process.env.DATABASE_URL);
+    }
+    next();
+  });
+}
 
 // Helper to get session from req (set by requireAuth middleware)
 function getSession(req: express.Request): SessionPayload {
@@ -319,6 +368,10 @@ app.post("/api/query/clarify", requireAuth, async (req, res) => {
 
 app.post("/api/query", requireAuth, async (req, res) => {
   try {
+    if (!pool) {
+      res.status(503).json({ error: "Database not configured. Complete setup first." });
+      return;
+    }
     const session = getSession(req);
     const { question } = req.body;
 
