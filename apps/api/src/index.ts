@@ -1434,5 +1434,5 @@ app.put("/api/dashboard/notes", requireAuth, async (req, res) => {
 const PORT = Number(process.env.PORT) || 3001;
 
 app.listen(PORT, () => {
-  console.log(`QueryBot API listening on port ${PORT}`);
+  console.log(`text2SQL API listening on port ${PORT}`);
 });

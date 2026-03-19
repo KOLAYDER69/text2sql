@@ -161,7 +161,7 @@ bot.command("start", async (ctx) => {
     );
 
     await ctx.reply(
-      "Welcome to <b>Leads AI — Insights</b>!\n\n" +
+      "Welcome to <b>text2SQL</b>!\n\n" +
         "Your access has been activated. You can now:\n" +
         "- Ask questions about your data in natural language\n" +
         "- Get daily insights automatically via /schedule\n" +
@@ -962,7 +962,7 @@ async function startWithRetry(maxRetries = 5) {
       await initScheduler(bot, appPool, pool);
       await bot.start({
         onStart: () => {
-          console.log("QueryBot started (long polling)");
+          console.log("text2SQL bot started (long polling)");
 
           // Register bot commands menu
           bot.api.setMyCommands([

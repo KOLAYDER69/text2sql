@@ -5,7 +5,7 @@
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'querybot_app') THEN
-    CREATE ROLE querybot_app WITH LOGIN PASSWORD '9048295cb7aa8c6c4305f0fb7725968962a1c4e0599a90da';
+    CREATE ROLE querybot_app WITH LOGIN PASSWORD 'ЗАМЕНИТЕ_НА_СВОЙ_ПАРОЛЬ';
   END IF;
 END
 $$;
@@ -76,7 +76,7 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO querybot_app;
 -- Also grant readonly on business tables so app role can introspect
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO querybot_app;
 
--- Seed initial admin user
+-- Seed initial admin user (замените telegram_id на свой)
 INSERT INTO app_users (telegram_id, first_name, role)
-VALUES (6134695031, 'Admin', 'admin')
+VALUES (000000000, 'Admin', 'admin')
 ON CONFLICT (telegram_id) DO NOTHING;

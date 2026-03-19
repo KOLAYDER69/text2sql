@@ -8,7 +8,7 @@ const ROWS = 10;
 const MASK_SCALE = 12; // render mask at 12x for clean text
 
 /**
- * Holographic "Leads AI" logo assembled from floating digits.
+ * Holographic "text2SQL" logo assembled from floating digits.
  * Digits forming the text glow cyan; background digits stay very dim.
  */
 export function HoloLogo({ size = "md" }: { size?: "sm" | "md" }) {
@@ -40,11 +40,11 @@ export function HoloLogo({ size = "md" }: { size?: "sm" | "md" }) {
 
     // Title — bold, ~42% of mask height ≈ 50px
     maskCtx.font = `bold ${Math.floor(MASK_H * 0.42)}px sans-serif`;
-    maskCtx.fillText("LEADS AI", MASK_W / 2, MASK_H * 0.36);
+    maskCtx.fillText("text2SQL", MASK_W / 2, MASK_H * 0.36);
 
     // Subtitle — ~17% ≈ 20px
     maskCtx.font = `${Math.floor(MASK_H * 0.17)}px sans-serif`;
-    maskCtx.fillText("Ask & Get data", MASK_W / 2, MASK_H * 0.76);
+    maskCtx.fillText("Ask data in plain language", MASK_W / 2, MASK_H * 0.76);
 
     const maskData = maskCtx.getImageData(0, 0, MASK_W, MASK_H).data;
 

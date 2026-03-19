@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Leads AI",
-  description: "Ask & Get data — AI-powered database analytics",
+  title: "text2SQL",
+  description: "Задай вопрос — получи данные. AI-аналитика на естественном языке",
 };
 
 export default function RootLayout({

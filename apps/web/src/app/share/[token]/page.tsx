@@ -90,7 +90,7 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
           <p className="text-2xl font-bold mb-2">404</p>
           <p className="text-white/40">This shared query has expired or does not exist.</p>
           <a href="/" className="inline-block mt-4 text-sm text-blue-400 hover:text-blue-300 transition">
-            Open QueryBot
+            Open text2SQL
           </a>
         </div>
       </div>
@@ -110,7 +110,7 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
             href="/"
             className="text-sm text-blue-400 hover:text-blue-300 transition shrink-0"
           >
-            Open QueryBot
+            Open text2SQL
           </a>
         </div>
 

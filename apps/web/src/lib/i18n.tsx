@@ -6,8 +6,8 @@ export type Lang = "ru" | "en";
 
 const translations = {
   // ─── Login ───
-  "login.title": { ru: "Leads AI", en: "Leads AI" },
-  "login.subtitle": { ru: "Аналитика данных на базе ИИ", en: "AI-powered database analytics" },
+  "login.title": { ru: "text2SQL", en: "text2SQL" },
+  "login.subtitle": { ru: "Задай вопрос — получи данные", en: "Ask data in plain language" },
   "login.signIn": { ru: "Войти через Telegram", en: "Sign in with Telegram" },
   "login.confirming": { ru: "Подтвердите в Telegram...", en: "Confirm in Telegram..." },
   "login.pressStart": { ru: "Нажмите /start в боте для входа", en: "Press /start in the bot to complete sign-in" },
@@ -190,7 +190,7 @@ const translations = {
   "share.title": { ru: "Результат запроса", en: "Query Result" },
   "share.expired": { ru: "Ссылка истекла или не найдена", en: "Link expired or not found" },
   "share.expiresAt": { ru: "Действует до", en: "Valid until" },
-  "share.openApp": { ru: "Открыть Leads AI", en: "Open Leads AI" },
+  "share.openApp": { ru: "Открыть text2SQL", en: "Open text2SQL" },
   "share.sharedOn": { ru: "Опубликовано", en: "Shared on" },
 
   // ─── Chat ───

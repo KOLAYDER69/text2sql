@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: "http://85.198.69.198:3333/api/:path*",
+        destination: process.env.API_URL || "http://localhost:3001/api/:path*",
       },
     ];
   },
